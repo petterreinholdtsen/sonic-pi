@@ -1,0 +1,21 @@
+Source: sonic-pi
+Section: x11
+Priority: optional
+Maintainer: Georges Khaznadar <georgesk@debian.org>
+Build-Depends: debhelper (>= 9), quilt, pkg-config, g++,
+ supercollider, libqscintilla2-dev, libqscintilla2-l10n,
+ qt4-dev-tools, libqt4-dev,
+ cmake, ruby, ruby-rugged, ruby-dev, libffi-dev
+Standards-Version: 3.9.6
+Homepage: http://sonic-pi.net/
+
+Package: sonic-pi
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: <insert up to 60 chars description>
+ <insert long description, indented with spaces>
+
+Package: sonic-pi-doc
+Architecture: all
+Description: documentation for sonic-pi
+ <insert long description, indented with spaces>

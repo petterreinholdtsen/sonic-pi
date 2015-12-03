@@ -1,0 +1,3 @@
+Sourceless ".so" files which come from the upstream repository are
+removed to make the DFSG-compliant package. Those files were in:
+app/server/native/raspberry/

@@ -1,0 +1,6 @@
+sonic-pi (2.7.0+dfsg1-1) unstable; urgency=low
+
+  * Initial release (Closes: #796550)
+  * 
+
+ -- Georges Khaznadar <georgesk@debian.org>  Tue, 03 Nov 2015 20:18:33 +0100
