@@ -12,13 +12,13 @@ Index: sonic-pi-2.7.0+dfsg1/Makefile
 +	../../server/bin/qt-doc.rb -o ruby_help.h; \
 +	lrelease SonicPi.pro; \
 +	qmake-qt4 -o Makefile SonicPi.pro; \
-+	make
++	$(MAKE)
 +
 +
 +clean:
 +	#grabbed from app/gui/qt/rp-build-app
 +	cd app/gui/qt; \
-+	[ ! -f Makefile ] || make distclean
++	[ ! -f Makefile ] || $(MAKE) distclean
 +	rm -f app/gui/qt/lang/*.qm
 +	rm -f app/gui/qt/book/*
 +	rm -f app/gui/qt/help/*
@@ -29,6 +29,6 @@ Index: sonic-pi-2.7.0+dfsg1/Makefile
 +
 +install:
 +	cd app/gui/qt; \
-+	make install DESTDIR=$(DESTDIR)
++	$(MAKE) install DESTDIR=$(DESTDIR)
 +
 +.PHONY: configure all clean install
