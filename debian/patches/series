@@ -1,2 +1,3 @@
 01-toplevel-makefile.patch
 02-no-uninitialized-var-warning.patch
+03-qmake-install.patch
