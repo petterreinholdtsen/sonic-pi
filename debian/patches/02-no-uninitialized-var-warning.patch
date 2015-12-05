@@ -1,0 +1,14 @@
+diff --git a/app/gui/qt/SonicPi.pro b/app/gui/qt/SonicPi.pro
+index cd9f045..b474d0f 100644
+--- a/app/gui/qt/SonicPi.pro
++++ b/app/gui/qt/SonicPi.pro
+@@ -39,7 +39,8 @@ macx {
+ }
+ 
+ !win32 {
+-  QMAKE_CXXFLAGS += -Wall -Werror -Wextra
++# Using -Wno-unused-variable to avoid fatal error in generated file qrc_SonicPi.cpp
++  QMAKE_CXXFLAGS += -Wall -Werror -Wextra -Wno-unused-variable
+ }
+ win32 {
+   QMAKE_CXXFLAGS += /WX

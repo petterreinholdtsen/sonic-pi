@@ -1,1 +1,2 @@
 Makefile.patch
+02-no-uninitialized-var-warning.patch
