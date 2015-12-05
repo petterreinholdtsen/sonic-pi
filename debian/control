@@ -17,7 +17,9 @@ Description: music programming environment aimed at new programmers
  strings or whacking things with sticks - you write code - live.
 
 Package: sonic-pi-doc
+Section: doc
 Architecture: all
+Depends: ${misc:Depends}
 Description: music programming environment aimed at new programmers - documentation
  Sonic Pi is a new kind of musical instrument. Instead of strumming
  strings or whacking things with sticks - you write code - live.
