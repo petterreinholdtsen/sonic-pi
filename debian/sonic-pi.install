@@ -3,3 +3,6 @@ app/server/bin     /usr/share/sonic-pi/app/server
 app/server/sonicpi /usr/share/sonic-pi/app/server
 app/server/core.rb /usr/share/sonic-pi/app/server
 app/server/util.rb /usr/share/sonic-pi/app/server
+etc                /usr/share/sonic-pi
+# FIXME This one includes lots of third party libraries
+app/server/vendor  /usr/share/sonic-pi/app/server
