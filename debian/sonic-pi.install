@@ -1,1 +1,5 @@
 usr/bin/sonic-pi
+app/server/bin     /usr/share/sonic-pi/app/server
+app/server/sonicpi /usr/share/sonic-pi/app/server
+app/server/core.rb /usr/share/sonic-pi/app/server
+app/server/util.rb /usr/share/sonic-pi/app/server
