@@ -12,10 +12,14 @@ Homepage: http://sonic-pi.net/
 Package: sonic-pi
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Description: <insert up to 60 chars description>
- <insert long description, indented with spaces>
+Description: music programming environment aimed at new programmers
+ Sonic Pi is a new kind of musical instrument. Instead of strumming
+ strings or whacking things with sticks - you write code - live.
 
 Package: sonic-pi-doc
 Architecture: all
-Description: documentation for sonic-pi
- <insert long description, indented with spaces>
+Description: music programming environment aimed at new programmers - documentation
+ Sonic Pi is a new kind of musical instrument. Instead of strumming
+ strings or whacking things with sticks - you write code - live.
+ .
+ This is the system documentation.
