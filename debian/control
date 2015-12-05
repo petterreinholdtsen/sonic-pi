@@ -2,7 +2,7 @@ Source: sonic-pi
 Section: x11
 Priority: optional
 Maintainer: Georges Khaznadar <georgesk@debian.org>
-Build-Depends: debhelper (>= 9), quilt, pkg-config, g++,
+Build-Depends: debhelper (>= 9), quilt, pkg-config,
  supercollider, libqscintilla2-dev, libqscintilla2-l10n,
  qt4-dev-tools, libqt4-dev,
  cmake, ruby, ruby-rugged, ruby-dev, libffi-dev
