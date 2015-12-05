@@ -1,0 +1,17 @@
+diff --git a/app/gui/qt/mainwindow.cpp b/app/gui/qt/mainwindow.cpp
+index 21b3736..43a3e9b 100644
+--- a/app/gui/qt/mainwindow.cpp
++++ b/app/gui/qt/mainwindow.cpp
+@@ -661,6 +661,12 @@ QString MainWindow::rootPath() {
+   return QCoreApplication::applicationDirPath() + "/../..";
+ #elif defined(Q_OS_WIN)
+   return QCoreApplication::applicationDirPath() + "/../../../..";
++#elif defined(__linux__)
++#  if defined(APPROOT)
++  return Qstring(APPROOT);
++#  else
++  return QString("/usr/share/sonic-pi");
++#  endif
+ #else
+   return QCoreApplication::applicationDirPath() + "/../../..";
+ #endif
