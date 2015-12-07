@@ -1,5 +1,5 @@
 Source: sonic-pi
-Section: x11
+Section: sound
 Priority: optional
 Maintainer: Georges Khaznadar <georgesk@debian.org>
 Build-Depends: debhelper (>= 9), quilt, pkg-config,
@@ -12,16 +12,20 @@ Homepage: http://sonic-pi.net/
 Package: sonic-pi
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Description: music programming environment aimed at new programmers
- Sonic Pi is a new kind of musical instrument. Instead of strumming
- strings or whacking things with sticks - you write code - live.
+Description: Qt-based IDE for Sonic Pi
+ A free live coding synth for everyone originally designed to support
+ computing and music lessons within schools. Use code to compose and
+ perform in classical and contemporary styles ranging from Canons to
+ Dubstep.
 
 Package: sonic-pi-doc
 Section: doc
 Architecture: all
 Depends: ${misc:Depends}
-Description: music programming environment aimed at new programmers - documentation
- Sonic Pi is a new kind of musical instrument. Instead of strumming
- strings or whacking things with sticks - you write code - live.
+Description: Qt-based IDE for Sonic Pi - documentation
+ A free live coding synth for everyone originally designed to support
+ computing and music lessons within schools. Use code to compose and
+ perform in classical and contemporary styles ranging from Canons to
+ Dubstep.
  .
  This is the system documentation.
