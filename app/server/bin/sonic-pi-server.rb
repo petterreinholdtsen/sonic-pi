@@ -4,7 +4,7 @@
 # Full project source: https://github.com/samaaron/sonic-pi
 # License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 #
-# Copyright 2013, 2014, 2015 by Sam Aaron (http://sam.aaron.name).
+# Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 # All rights reserved.
 #
 # Permission is granted for use, copying, modification, and
@@ -13,6 +13,7 @@
 #++
 
 require 'cgi'
+require 'rbconfig'
 
 require_relative "../core.rb"
 require_relative "../sonicpi/lib/sonicpi/studio"
@@ -26,35 +27,9 @@ require_relative "../sonicpi/lib/sonicpi/lang/sound"
 #require_relative "../sonicpi/lib/sonicpi/lang/pattern"
 require_relative "../sonicpi/lib/sonicpi/runtime"
 
-os = case RUBY_PLATFORM
-     when /.*arm.*-linux.*/
-       :raspberry
-     when /.*linux.*/
-       :linux
-     when /.*darwin.*/
-       :osx
-     when /.*mingw.*/
-       :windows
-     else
-       RUBY_PLATFORM
-     end
-
-if os == :osx
-  # Force sample rate for both input and output to 44k
-  # If these are not identical, then scsynth will refuse
-  # to boot.
-  begin
-    require 'coreaudio'
-    CoreAudio.default_output_device(nominal_rate: 44100.0)
-    CoreAudio.default_input_device(nominal_rate: 44100.0)
-  rescue Exception => e
-    STDERR.puts "Unable to set sample rate on default input/output device to 44100"
-    STDERR.puts e.message
-    STDERR.puts e.backtrace.inspect
-  end
-end
-
 require 'multi_json'
+
+puts "Sonic Pi server booting..."
 
 include SonicPi::Util
 
@@ -70,7 +45,6 @@ protocol = case ARGV[0]
 
 puts "Using protocol: #{protocol}"
 
-ws_out = Queue.new
 if protocol == :tcp
   gui = SonicPi::OSC::TCPClient.new("127.0.0.1", client_port, use_encoder_cache: true)
 else
@@ -98,11 +72,14 @@ end
 
 
 at_exit do
+  STDOUT.puts "Server is exiting."
   begin
+    STDOUT.puts "Shutting down GUI..."
     gui.send("/exited")
   rescue Errno::EPIPE => e
     STDERR.puts "GUI not listening."
   end
+  STDOUT.puts "Goodbye :-)"
 end
 
 user_methods = Module.new
@@ -115,8 +92,22 @@ klass.send(:include, SonicPi::Lang::Sound)
 klass.send(:include, SonicPi::Lang::Minecraft)
 #klass.send(:include, SonicPi::Lang::Pattern)
 
+ws_out = Queue.new
+
 begin
   sp =  klass.new "localhost", 4556, ws_out, 5, user_methods
+
+  # read in init.rb if exists
+  if File.exists?(init_path)
+    sp.__spider_eval(File.read(init_path))
+  else
+    File.open(init_path, "w") do |f|
+      f.puts "# Sonic Pi init file"
+      f.puts "# Code in here will be evaluated on launch."
+      f.puts ""
+    end
+  end
+
 rescue Exception => e
   STDERR.puts "Failed to start server: " + e.message
   STDERR.puts e.backtrace.join("\n")
@@ -377,5 +368,10 @@ out_t = Thread.new do
     end
   end
 end
+
+puts "This is Sonic Pi #{sp.__current_version} running on #{os} with ruby api #{RbConfig::CONFIG['ruby_version']}."
+puts "Sonic Pi Server successfully booted."
+
+STDOUT.flush
 
 out_t.join

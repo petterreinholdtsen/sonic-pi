@@ -3,7 +3,7 @@
 # Full project source: https://github.com/samaaron/sonic-pi
 # License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 #
-# Copyright 2013, 2014, 2015 by Sam Aaron (http://sam.aaron.name).
+# Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 # All rights reserved.
 #
 # Permission is granted for use, copying, modification, and
@@ -129,7 +129,7 @@ module SonicPi
     end
 
     def to_hamster
-      Hamster.hash({:pitch_class => @pitch_class, :octave => @octave, :interval => @interval, :midi_note => @midi_note, :midi_string => @midi_string})
+      Hamster::Hash.new({:pitch_class => @pitch_class, :octave => @octave, :interval => @interval, :midi_note => @midi_note, :midi_string => @midi_string})
     end
 
     def to_s

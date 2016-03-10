@@ -3,7 +3,7 @@
 # Full project source: https://github.com/samaaron/sonic-pi
 # License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 #
-# Copyright 2013, 2014, 2015 by Sam Aaron (http://sam.aaron.name).
+# Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 # All rights reserved.
 #
 # Permission is granted for use, copying, modification, and
@@ -23,7 +23,7 @@ module SonicPi
     def self.preparse(rb)
       SonicPi::Lang::Core.vec_fns.each do |fn|
         fn = fn[:name].to_s
-        rb.gsub!(/\((\s*)#{fn}(\s)/, '\1' + fn + '(\2')
+        rb.gsub!(/\((\s*)#{fn}(\s)/, '\1' + ' ' + fn + '(\2')
 
         rb.gsub!(/:([a-zA-Z0-9\!\?=_]+:[a-zA-Z0-9\!\?=_]+[a-zA-Z0-9\!\?=_]*)/){|s| "::SonicPi::SPSym.new(#{$1.split(':').map(&:to_sym)})"}
 

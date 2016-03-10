@@ -16,6 +16,19 @@ This problem was reported on Windows machines in Sonic Pi v. 2.7. It was reporte
 * open Windows Task Manager with `Ctrl + Shift + Esc` 
 * try to kill all processes listed below if they're still running
 
+Ruby Interpreter (CUI)  
+scsynth.exe
+
+You can also check in Task Manger that there is no application entry sonic-pi.exe  
+and quit it if there is.
+
+## Linux: There is no sound with use_synth :piano
+
+You probably didn't install the SC3 plugins
+package for SuperCollider on your system. If there
+is no binary package provided by your distribution, you can
+[install it from source](https://github.com/samaaron/sonic-pi/blob/master/INSTALL-LINUX.md#supercollider-sc3-plugins).
+
 ## Linux: Trouble with JACK
 
 If the GUI complains that _"The Sonic Pi server could not be started!"_
@@ -41,7 +54,7 @@ workaround problems starting JACK](https://github.com/samaaron/sonic-pi/issues/8
 
 On Linux distributions using PulseAudio, starting JACK may interfere
 with the applications using sound that were running already, e.g.
-Firefox wills top playing audio once JACK starts. There is a guide on
+Firefox will stop playing audio once JACK starts. There is a guide on
 [how to configure JACK with PulseAudio](https://github.com/jackaudio/jackaudio.github.com/wiki/WalkThrough_User_PulseOnJack)
 to avoid this.
 

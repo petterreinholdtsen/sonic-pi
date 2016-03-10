@@ -3,7 +3,7 @@
 # Full project source: https://github.com/samaaron/sonic-pi
 # License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 #
-# Copyright 2013, 2014, 2015 by Sam Aaron (http://sam.aaron.name).
+# Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 # All rights reserved.
 #
 # Permission is granted for use, copying, modification, and
@@ -13,16 +13,18 @@
 
 require_relative "../../setup_test"
 require_relative "../../../lib/sonicpi/util"
-require_relative "../../../lib/sonicpi/lang/sound"
+require_relative "../../../lib/sonicpi/sample_loader"
 
 module SonicPi
   module Lang
     module Sound
       module_function :sample_duration
       module_function :pitch_to_ratio
+      module_function :sample_split_filts_and_opts
+
 
       # mock out load_sample to always return a sample with duration 8
-      def self.load_sample(path)
+      def self.load_sample_at_path(path)
         mock_samp = Struct.new(:duration)
         mock_samp.new(8)
       end
@@ -30,6 +32,10 @@ module SonicPi
       # mock out current bpm to be 60
       def self.current_bpm
         60
+      end
+
+      def self.sample_path(*args)
+        "/foo/bar"
       end
     end
   end

@@ -3,7 +3,7 @@
 # Full project source: https://github.com/samaaron/sonic-pi
 # License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 #
-# Copyright 2013, 2014, 2015 by Sam Aaron (http://sam.aaron.name).
+# Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 # All rights reserved.
 #
 # Permission is granted for use, copying, modification, and
@@ -41,6 +41,18 @@ module SonicPi
         r = rand(range.to_f)
         smallest = [min, max].min
         r + smallest
+      end
+
+      def alias_opts!(alias_opt, orig_opt, args_h)
+        if args_h.has_key?(alias_opt) && !args_h.has_key?(orig_opt)
+          args_h[orig_opt] = args_h[alias_opt]
+          args_h.delete(alias_opt)
+        end
+        args_h
+      end
+
+      def munge_opts(args_h)
+        args_h
       end
 
       def doc
@@ -93,7 +105,8 @@ module SonicPi
 
         args_h.each do |k, v|
           k_sym = k.to_sym
-          arg_information = @info[k_sym] || {}
+          arg_information = @info[k_sym]
+          next unless arg_information
           arg_validations = arg_information[:validations] || []
           arg_validations(k_sym).each do |v_fn, msg|
             raise "Value of opt #{k_sym.inspect} #{msg}, got #{v.inspect}." unless v_fn.call(args_h)
@@ -154,15 +167,26 @@ module SonicPi
         @cached_slide_args = slide_args
       end
 
+      def slide_arg_defaults
+        return @cached_slide_arg_defaults if @cached_slide_arg_defaults
+        slide_arg_defaults = slide_args.reduce({}) do |res, a|
+          res[a] = arg_defaults[a]
+        end
+
+        @cached_slide_arg_defaults = slide_arg_defaults
+      end
+
       def arg_info
         return @cached_arg_info if @cached_arg_info
 
         res = {}
         arg_defaults.each do |arg, default|
           if m = /(.*)_slide/.match(arg.to_s) then
+            # modify stem opt (creating info if it doesn't exist)
             parent = m[1].to_sym
-            res[parent][:slidable] = true
-            # and don't add to arg_info table
+            new_info = res[parent] || {}
+            new_info[:slidable] = true
+            res[parent] = new_info
           else
             default_info = @info[arg] || {}
             constraints = (default_info[:validations] || []).map{|el| el[1]}
@@ -514,6 +538,8 @@ module SonicPi
 
     end
 
+
+
     class SynthInfo < BaseInfo
       def category
         :general
@@ -859,6 +885,24 @@ module SonicPi
           :detune_slide_shape => 1,
           :detune_slide_curve => 0,
         }
+      end
+    end
+
+    class DTri < DSaw
+      def name
+        "Detuned Triangle Wave"
+      end
+
+      def introduced
+        Version.new(2, 10, 0)
+      end
+
+      def synth_name
+        "dtri"
+      end
+
+      def doc
+        "A pair of detuned triangle waves passed through a low pass filter. Two pulse waves with slightly different frequencies generates a nice thick sound which can be used as a basis for some nice bass sounds. Thicken the sound by increasing the detune value, or create an octave-playing synth by choosing a detune of 12 (12 MIDI notes is an octave)."
       end
     end
 
@@ -1755,6 +1799,112 @@ module SonicPi
       end
     end
 
+    class SynthPluck < SonicPiSynth
+      def name
+        "SynthPluck"
+      end
+
+      def introduced
+        Version.new(2,10,0)
+      end
+
+      def synth_name
+        "pluck"
+      end
+
+      def doc
+        "A basic plucked string synthesiser that uses Karplus-Strong synthesis. Note that due to the plucked nature of this synth the envelope opts such as `attack:`, `sustain:` and `release:` do not work as expected. They can only shorten the natural length of the note, not prolong it. Also, the `note:` opt will only honour whole tones."
+      end
+
+      def arg_defaults
+        {
+          :note => 52,
+          :note_slide => 0,
+          :note_slide_shape => 1,
+          :note_slide_curve => 0,
+          :amp => 1,
+          :amp_slide => 0,
+          :amp_slide_shape => 1,
+          :amp_slide_curve => 0,
+          :pan => 0,
+          :pan_slide => 0,
+          :pan_slide_shape => 1,
+          :pan_slide_curve => 0,
+          :attack => 0,
+          :sustain => 0,
+          :release => 1,
+          :attack_level => 1,
+          :decay => 0,
+          :decay_level => :sustain_level,
+          :sustain_level => 1,
+          :noise_amp => 0.8,
+          :max_delay_time => 0.125,
+          :pluck_decay => 30,
+          :coef => 0.3
+        }
+      end
+
+      def specific_arg_info
+        {
+          :note =>
+          {
+            :doc => "Note to play. Either a MIDI number or a symbol representing a note. For example: `30`, `52`, `:C`, `:C2`, `:Eb4`, or `:Ds3`. Note that the piano synth can only play whole tones such as 60 and does not handle floats such as 60.3",
+            :validations => [v_positive(:note)],
+            :modulatable => true
+          },
+
+          :noise_amp => {
+            :doc => "Amplitude of source (pink) noise.",
+            :validations => [v_between_inclusive(:noise_amp, 0, 1)],
+            :modulatable => false},
+
+          :max_delay_time => {
+            :doc => "Maximum length of the delay line buffer.",
+            :validations => [v_between_inclusive(:max_delay_time, 0.125, 1)],
+            :modulatable => false},
+
+          :pluck_decay => {
+            :doc => "How long the pluck takes to stabilise on a note. This doesn't have a dramatic effect on the sound.",
+            :validations => [v_between_inclusive(:pluck_decay, 1, 100)],
+            :modulatable => false},
+
+          :coef =>
+          {
+            :doc => "Coefficient of the internal OnePole filter. Values around zero are resonant and bright, values towards 1 sound more dampened and cutoff. It's a little bit like playing nearer the soundhole/fingerboard for values near zero and more toward the bridge for values approaching one, although this isn't an exact comparison.",
+            :validations => [v_between_inclusive(:coef, -1, 1)],
+            :modulatable => false
+          },
+
+          :decay =>
+          {
+            :doc => "Amount of time (in beats) for the sound to move from full amplitude (attack_level) to the sustain amplitude (sustain_level). With the piano synth, this opt can only have the effect of controlling the amp within the natural duration of the note and can not prolong the sound.",
+            :validations => [v_positive(:decay)],
+            :modulatable => false,
+            :bpm_scale => true
+          },
+
+          :sustain =>
+          {
+            :doc => "Amount of time (in beats) for sound to remain at sustain level amplitude. Longer sustain values result in longer sounds. With the piano synth, this opt can only have the effect of controlling the amp within the natural duration of the note and can not prolong the sound.",
+            :validations => [v_positive(:sustain)],
+            :modulatable => false,
+            :bpm_scale => true
+          },
+
+          :release =>
+          {
+            :doc => "Amount of time (in beats) for sound to move from sustain level amplitude to silent. A short release (i.e. 0.01) makes the final part of the sound very percussive (potentially resulting in a click). A longer release (i.e 1) fades the sound out gently. With the piano synth, this opt can only have the effect of controlling the amp within the natural duration of the note and can not prolong the sound.",
+            :validations => [v_positive(:release)],
+            :modulatable => false,
+            :bpm_scale => true
+          }
+
+
+        }
+
+      end
+    end
+
     class SynthPiano < SonicPiSynth
       def name
         "SynthPiano"
@@ -1815,12 +1965,12 @@ module SonicPi
 
           :hard => {
             :doc => "Hardness of keypress. ",
-           :validations => [v_between_inclusive(:vel, 0, 1)],
+           :validations => [v_between_inclusive(:hard, 0, 1)],
             :modulatable => false},
 
           :stereo_width => {
             :doc => "Width of the stereo effect (which makes low notes sound towards the left, high notes towards the right). 0 to 1.",
-            :validations => [v_between_inclusive(:vel, 0, 1)],
+            :validations => [v_between_inclusive(:stereo_width, 0, 1)],
             :modulatable => false},
 
           :attack =>
@@ -2216,7 +2366,7 @@ module SonicPi
         {
           :norm =>
           {
-            :doc => "Normalise the audio (make quieter parts of the sample louder and louder parts quieter) - this is similar to the normaliser FX. This may emphasise any clicks caused by clipping.",
+            :doc => "Normalise the audio (make quieter parts of the synth's sound louder and louder parts quieter) - this is similar to the normaliser FX. This may emphasise any clicks caused by clipping.",
             :validations => [v_one_of(:norm, [0, 1])],
             :modulatable => true
           },
@@ -2344,7 +2494,7 @@ module SonicPi
           :range =>
           {
             :doc => "Range of the associated sync saw in MIDI notes from the main note. Modifies timbre.",
-            :validations => [v_between_inclusive(:phase_offset, 0, 90)],
+            :validations => [v_between_inclusive(:range, 0, 90)],
             :modulatable => true
           },
 
@@ -2432,6 +2582,127 @@ module SonicPi
         }
       end
 
+    end
+
+    class ChipLead < SonicPiSynth
+      def name
+        "Chip Lead"
+      end
+
+      def introduced
+        Version.new(2,10,0)
+      end
+
+      def synth_name
+        "chiplead"
+      end
+
+      def doc
+        "A slightly clipped square (pulse) wave with phases of 12.5%, 25% or 50% modelled after the 2A03 chip found in voices 1 and 2 of the NES games console. This can be used for retro sounding leads and harmonised lines. This also adds an opt 'note_resolution' which locks the note slide to certain pitches which are multiples of the step size. This allows for emulation of the sweep setting on the 2A03."
+      end
+
+      def arg_defaults
+        {
+          :note => 60,
+          :note_slide => 0,
+          :note_slide_shape => 1,
+          :note_slide_curve => 0,
+          :note_resolution => 0.1,
+          :amp => 1,
+          :amp_slide => 0,
+          :amp_slide_shape => 1,
+          :amp_slide_curve => 0,
+          :pan => 0,
+          :pan_slide => 0,
+          :pan_slide_shape => 1,
+          :pan_slide_curve => 0,
+
+          :attack => 0,
+          :decay => 0,
+          :sustain => 0,
+          :release => 1,
+          :attack_level => 1,
+          :decay_level => :sustain_level,
+          :sustain_level => 1,
+          :env_curve => 2,
+
+          :width => 0
+        }
+      end
+
+      def specific_arg_info
+        {
+          :width =>
+          {
+            :doc => "Which of the three pulse_widths to use - 0 => 12.5%, 1 => 25%, 2 => 50%",
+            :validations => [v_one_of(:width, [0, 1, 2])],
+            :modulatable => true,
+          },
+
+          :note_resolution =>
+          {
+            :doc => "Locks down the note resolution to be multiples of this (MIDI) number. For example, a `note_resolution:` of 1 will only allow semitones to be played. When used in conjunction with `note_slide:` produces a staircase of notes rather than a continuous line which is how things were on the NES. Set to 0 to disable. This wasn't a feature of this triangle (bass) channel on the original chip but some emulators have added it in since.",
+            :validations => [v_positive(:note_resolution)],
+            :modulatable => true
+          },
+        }
+      end
+    end
+
+    class ChipBass < SonicPiSynth
+      def name
+        "Chip Bass"
+      end
+
+      def introduced
+        Version.new(2,10,0)
+      end
+
+      def synth_name
+        "chipbass"
+      end
+
+      def doc
+        "A 16 step triangle wave modelled after the 2A03 chip found in voice 3 of the NES games console. This can be used for retro sounding basslines. For complete authenticity with the 2A03 bear in mind that the triangle channel on that chip didn't have a volume control."
+      end
+
+      def arg_defaults
+        {
+          :note => 60,
+          :note_slide => 0,
+          :note_slide_shape => 1,
+          :note_slide_curve => 0,
+          :note_resolution => 0.1,
+          :amp => 1,
+          :amp_slide => 0,
+          :amp_slide_shape => 1,
+          :amp_slide_curve => 0,
+          :pan => 0,
+          :pan_slide => 0,
+          :pan_slide_shape => 1,
+          :pan_slide_curve => 0,
+
+          :attack => 0,
+          :decay => 0,
+          :sustain => 0,
+          :release => 1,
+          :attack_level => 1,
+          :decay_level => :sustain_level,
+          :sustain_level => 1,
+          :env_curve => 2,
+        }
+      end
+
+      def specific_arg_info
+        {
+          :note_resolution =>
+          {
+            :doc => "Locks down the note resolution to be multiples of this (MIDI) number. For example, a `note_resolution:` of 1 will only allow semitones to be played. When used in conjunction with `note_slide:` produces a staircase of notes rather than a continuous line which is how things were on the NES. Set to 0 to disable. This wasn't a feature of this triangle (bass) channel on the original chip but some emulators have added it in since.",
+            :validations => [v_positive(:note_resolution)],
+            :modulatable => true
+          },
+        }
+      end
     end
 
     class Pitchless < SonicPiSynth
@@ -2562,6 +2833,70 @@ module SonicPi
 
     end
 
+    class ChipNoise < Noise
+      def name
+        "Chip Noise"
+      end
+
+      def introduced
+        Version.new(2,10,0)
+      end
+
+      def synth_name
+        "chipnoise"
+      end
+
+      def doc
+        "Generates noise whose values are either -1 or 1 (like a pulse or square wave) with one of 16 particular frequencies. This is similar to the noise channel on the 2A03 chip used in the NES games console, although it lacks the same Pseudo-Random Number Generator (PRNG) and doesn't implement the 2A03's lesser used noise mode. The amplitude envelope defaults to moving by step to keep that 16 bit feel and this synth also has a slight soft clipping to better imitate the original sound of the device. Use for retro effects, hand claps, snare drums and hi-hats."
+      end
+
+      def arg_defaults
+        {
+          :amp => 1,
+          :amp_slide => 0,
+          :amp_slide_shape => 0,
+          :amp_slide_curve => 1,
+          :pan => 0,
+          :pan_slide => 0,
+          :pan_slide_shape => 1,
+          :pan_slide_curve => 0,
+
+          :attack => 0,
+          :decay => 0,
+          :sustain => 1,
+          :release => 0,
+          :attack_level => 1,
+          :decay_level => :sustain_level,
+          :sustain_level => 1,
+          :env_curve => 0,
+
+          :freq_band => 0,
+          :freq_band_slide => 0,
+          :freq_band_slide_shape => 1,
+          :freq_band_slide_curve => 0,
+        }
+      end
+
+      def specific_arg_info
+        {
+          :freq_band =>
+          {
+            :doc => "Which of the 16 frequency bands to use, from 0 to 15. These range from 220Hz to 225kHz as on the original chip. This arg will accept floats but round to the nearest integer to allow for sweeping through the 16 set points with envelopes.",
+            :validations => [v_between_inclusive(:freq_band, 0, 15)],
+            :modulatable => true,
+          },
+
+          :freq_band_slide =>
+          {
+            :doc => generic_slide_doc(:freq_band),
+            :validations => [v_positive(:freq_band_slide)],
+            :modulatable => true,
+            :bpm_scale => true
+          },
+        }
+      end
+    end
+
     class StudioInfo < SonicPiSynth
 
     end
@@ -2597,7 +2932,6 @@ module SonicPi
 
 
 
-
     class BasicMonoPlayer < StudioInfo
       def name
         "Basic Mono Sample Player (no env)"
@@ -2615,6 +2949,14 @@ module SonicPi
         ""
       end
 
+      def munge_opts(args_h)
+        alias_opts!(:cutoff, :lpf, args_h)
+        alias_opts!(:cutoff_slide, :lpf_slide, args_h)
+        alias_opts!(:cutoff_slide_curve, :lpf_slide_curve, args_h)
+        alias_opts!(:cutoff_slide_shape, :lpf_slide_shape, args_h)
+        args_h
+      end
+
       def arg_defaults
         {
           :amp => 1,
@@ -2626,14 +2968,14 @@ module SonicPi
           :pan_slide_shape => 1,
           :pan_slide_curve => 0,
           :rate => 1,
-          :cutoff => 0,
-          :cutoff_slide => 0,
-          :cutoff_slide_shape => 1,
-          :cutoff_slide_curve => 0,
-          :res => 0,
-          :res_slide => 0,
-          :res_slide_shape => 1,
-          :res_slide_curve => 0,
+          :lpf => -1,
+          :lpf_slide => 0,
+          :lpf_slide_shape => 1,
+          :lpf_slide_curve => 0,
+          :hpf => -1,
+          :hpf_slide => 0,
+          :hpf_slide_shape => 1,
+          :hpf_slide_curve => 0
         }
       end
 
@@ -2643,8 +2985,18 @@ module SonicPi
           {
             :validations => [v_not_zero(:rate)],
             :modulatable => false
+          },
+
+
+          :lpf =>
+          {
+            :doc => "Low pass filter cutoff value. A MIDI note representing the highest frequencies allowed to be present in the sound. A low value like 30 makes the sound round and dull, a high value like 100 makes the sound buzzy and crispy.",
+            :validations => [v_positive(:lpf), v_less_than(:lpf, 131)],
+            :modulatable => true,
+            :midi => true
           }
         }
+
       end
     end
 
@@ -2666,7 +3018,7 @@ module SonicPi
       end
     end
 
-    class MonoPlayer < StudioInfo
+    class MonoPlayer < BasicMonoPlayer
       def name
         "Mono Sample Player"
       end
@@ -2689,10 +3041,48 @@ module SonicPi
           :amp_slide => 0,
           :amp_slide_shape => 1,
           :amp_slide_curve => 0,
+          :pre_amp => 1,
+          :pre_amp_slide => 0,
+          :pre_amp_slide_shape => 1,
+          :pre_amp_slide_curve => 0,
           :pan => 0,
           :pan_slide => 0,
           :pan_slide_shape => 1,
           :pan_slide_curve => 0,
+
+          :lpf => -1,
+          :lpf_slide => 0,
+          :lpf_slide_shape => 1,
+          :lpf_slide_curve => 0,
+          :lpf_attack => 0,
+          :lpf_decay => 0,
+          :lpf_sustain => -1,
+          :lpf_release => 0,
+          :lpf_attack_level => -1,
+          :lpf_decay_level => -1,
+          :lpf_sustain_level => -1,
+          :lpf_env_curve => 2,
+          :lpf_min => -1,
+          :lpf_min_slide => 0,
+          :lpf_min_slide_shape => 1,
+          :lpf_min_slide_curve => 0,
+
+          :hpf => -1,
+          :hpf_slide => 0,
+          :hpf_slide_shape => 1,
+          :hpf_slide_curve => 0,
+          :hpf_attack => 0,
+          :hpf_sustain => -1,
+          :hpf_decay => 0,
+          :hpf_release => 0,
+          :hpf_attack_level => -1,
+          :hpf_decay_level => -1,
+          :hpf_sustain_level => -1,
+          :hpf_env_curve => 2,
+          :hpf_max => -1,
+          :hpf_max_slide => 0,
+          :hpf_max_slide_shape => 1,
+          :hpf_max_slide_curve => 0,
 
           :attack => 0,
           :decay => 0,
@@ -2704,31 +3094,12 @@ module SonicPi
           :sustain_level => 1,
           :env_curve => 2,
 
-          :cutoff_attack => 0,
-          :cutoff_decay => 0,
-          :cutoff_sustain => -1,
-          :cutoff_release => 0,
-          :cutoff_attack_level => :cutoff,
-          :cutoff_decay_level => :cutoff,
-          :cutoff_sustain_level => :cutoff,
-          :cutoff_env_curve => 2,
-          :cutoff_min => 30,
-          :cutoff_min_slide => 0,
-          :cutoff_min_slide_shape => 1,
-          :cutoff_min_slide_curve => 0,
 
           :rate => 1,
           :start => 0,
           :finish => 1,
 
-          :res => 0,
-          :res_slide => 0,
-          :res_slide_shape => 1,
-          :res_slide_curve => 0,
-          :cutoff => 0,
-          :cutoff_slide => 0,
-          :cutoff_slide_shape => 1,
-          :cutoff_slide_curve => 0,
+
           :norm => 0,
 
           :pitch => 0,
@@ -2746,12 +3117,34 @@ module SonicPi
           :time_dis => 0.0,
           :time_dis_slide => 0,
           :time_dis_slide_shape => 1,
-          :time_dis_slide_curve => 0
+          :time_dis_slide_curve => 0,
+
+          :compress => 0,
+          :threshold => 0.2,
+          :threshold_slide => 0,
+          :threshold_slide_shape => 1,
+          :threshold_slide_curve => 0,
+          :clamp_time => 0.01,
+          :clamp_time_slide => 0,
+          :clamp_time_slide_shape => 1,
+          :clamp_time_slide_curve => 0,
+          :slope_above => 0.5,
+          :slope_above_slide => 0,
+          :slope_above_slide_shape => 1,
+          :slope_above_slide_curve => 0,
+          :slope_below => 1,
+          :slope_below_slide => 0,
+          :slope_below_slide_shape => 1,
+          :slope_below_slide_curve => 0,
+          :relax_time => 0.01,
+          :relax_time_slide => 0,
+          :relax_time_slide_shape => 1,
+          :relax_time_slide_curve => 0
         }
       end
 
       def specific_arg_info
-        {
+        super.merge({
 
           :attack =>
           {
@@ -2811,19 +3204,19 @@ module SonicPi
             :modulatable => true
           },
 
-          :res =>
-          {
-            :doc => "Filter resonance as a value between 0 and 1. Only functional if a cutoff value is specified. Large amounts of resonance (a res: near 1) can create a whistling sound around the cutoff frequency. Smaller values produce less resonance.",
-            :validations => [v_positive(:res), v_less_than(:res, 1)],
-            :modulatable => true
-          },
-
           :window_size =>
           {
             :doc => "Pitch shift works by chopping the input into tiny slices, then playing these slices at a higher or lower rate. If we make the slices small enough and overlap them, it sounds like the original sound with the pitch changed.
 
   The window_size is the length of the slices and is measured in seconds. It needs to be around 0.2 (200ms) or greater for pitched sounds like guitar or bass, and needs to be around 0.02 (20ms) or lower for percussive sounds like drum loops. You can experiment with this to get the best sound for your input.",
             :validations => [v_greater_than(:window_size, 0.00005)],
+            :modulatable => true
+          },
+
+          :pitch =>
+          {
+            :doc => "Pitch adjustment in semitones. 1 is up a semitone, 12 is up an octave, -12 is down an octave etc. Maximum upper limit of 24 (up 2 octaves). Lower limit of -72 (down 6 octaves). Decimal numbers can be used for fine tuning.",
+            :validations => [v_greater_than_oet(:pitch, -72), v_less_than_oet(:pitch, 24)],
             :modulatable => true
           },
 
@@ -2840,84 +3233,259 @@ module SonicPi
             :modulatable => true
           },
 
-          :cutoff_attack_level =>
+          :lpf_attack_level =>
           {
             :doc => "The peak cutoff (value of cutoff at peak of attack) as a MIDI note.",
-            :validations => [v_between_inclusive(:cutoff_attack_level, 0, 130)],
+            :validations => [v_between_inclusive(:lpf_attack_level, 0, 130)],
             :modulatable => false
           },
 
-          :cutoff_decay_level =>
+          :lpf_decay_level =>
           {
             :doc => "The level of cutoff after the decay phase as a MIDI note.",
-            :validations => [v_between_inclusive(:cutoff_decay_level, 0, 130)],
+            :validations => [v_between_inclusive(:lpf_decay_level, 0, 130)],
             :modulatable => false
           },
 
 
-          :cutoff_sustain_level =>
+          :lpf_sustain_level =>
           {
             :doc => "The sustain cutoff (value of cutoff at sustain time) as a MIDI note.",
-            :validations => [v_between_inclusive(:cutoff_sustain_level, 0, 130)],
+            :validations => [v_between_inclusive(:lpf_sustain_level, 0, 130)],
             :modulatable => false
           },
 
-          :cutoff_attack =>
+          :lpf_attack =>
           {
             :doc => "Attack time for cutoff filter. Amount of time (in beats) for sound to reach full cutoff value. Default value is set to match amp envelope's attack value.",
-            :validations => [v_positive(:cutoff_attack)],
+            :validations => [v_positive(:lpf_attack)],
             :modulatable => false,
             :default => "attack"
           },
 
-          :cutoff_decay =>
+          :lpf_decay =>
           {
             :doc => "Decay time for cutoff filter. Amount of time (in beats) for sound to move from full cutoff value (cutoff attack level) to the cutoff sustain level. Default value is set to match amp envelope's decay value.",
-            :validations => [v_positive(:cutoff_decay)],
+            :validations => [v_positive(:lpf_decay)],
             :modulatable => false,
             :default => "decay"
           },
 
-          :cutoff_sustain =>
+          :lpf_sustain =>
           {
             :doc => "Amount of time for cutoff value to remain at sustain level in beats. When -1 (the default) will auto-stretch.",
-            :validations => [[lambda{|args| v = args[:cutoff_sustain] ; (v == -1) || (v >= 0)}, "must either be a positive value or -1"]],
+            :validations => [[lambda{|args| v = args[:lpf_sustain] ; (v == -1) || (v >= 0)}, "must either be a positive value or -1"]],
             :modulatable => false,
             :default => "sustain"
           },
 
-          :cutoff_release =>
+          :lpf_release =>
           {
             :doc => "Amount of time (in beats) for sound to move from cutoff sustain value to cutoff min value. Default value is set to match amp envelope's release value.",
-            :validations => [v_positive(:cutoff_release)],
+            :validations => [v_positive(:lpf_release)],
             :modulatable => false,
             :default => "release"
           },
 
-          :cutoff_env_curve =>
+          :lpf_env_curve =>
           {
             :doc => "Select the shape of the curve between levels in the cutoff envelope. 1=linear, 2=exponential, 3=sine, 4=welch, 6=squared, 7=cubed",
-            :validations => [v_one_of(:cutoff_env_curve, [1, 2, 3, 4, 6, 7])],
+            :validations => [v_one_of(:lpf_env_curve, [1, 2, 3, 4, 6, 7])],
             :modulatable => false
           },
 
-          :cutoff_min =>
+          :lpf_min =>
           {
             :doc => "The minimum cutoff value.",
-            :validations => [v_less_than_oet(:cutoff_min, 130)],
+            :validations => [v_less_than_oet(:lpf_min, 130)],
             :modulatable => true,
             :midi => true
           },
 
-          :cutoff_min_slide =>
+          :lpf_min_slide =>
           {
-            :doc => generic_slide_doc(:cutoff_min),
-            :validations => [v_positive(:cutoff_min_slide)],
+            :doc => generic_slide_doc(:lpf_min),
+            :validations => [v_positive(:lpf_min_slide)],
             :modulatable => true,
             :bpm_scale => true
           },
 
-        }
+          :hpf_attack_level =>
+          {
+            :doc => "The peak hpf cutoff (value of hpf cutoff at peak of attack) as a MIDI note.",
+            :validations => [v_between_inclusive(:hpf_attack_level, 0, 130)],
+            :modulatable => false
+          },
+
+          :hpf_decay_level =>
+          {
+            :doc => "The level of hpf cutoff after the decay phase as a MIDI note.",
+            :validations => [v_between_inclusive(:hpf_decay_level, 0, 130)],
+            :modulatable => false
+          },
+
+
+          :hpf_sustain_level =>
+          {
+            :doc => "The sustain hpf cutoff (value of hpf cutoff at sustain time) as a MIDI note.",
+            :validations => [v_between_inclusive(:hpf_sustain_level, 0, 130)],
+            :modulatable => false
+          },
+
+          :hpf_attack =>
+          {
+            :doc => "Attack time for hpf cutoff filter. Amount of time (in beats) for sound to reach full hpf cutoff value. Default value is set to match amp envelope's attack value.",
+            :validations => [v_positive(:hpf_attack)],
+            :modulatable => false,
+            :default => "attack"
+          },
+
+          :hpf_decay =>
+          {
+            :doc => "Decay time for hpf cutoff filter. Amount of time (in beats) for sound to move from full hpf cutoff value (cutoff attack level) to the hpf cutoff sustain level. Default value is set to match amp envelope's decay value.",
+            :validations => [v_positive(:hpf_decay)],
+            :modulatable => false,
+            :default => "decay"
+          },
+
+          :hpf_sustain =>
+          {
+            :doc => "Amount of time for hpf cutoff value to remain at hpf sustain level in beats. When -1 (the default) will auto-stretch.",
+            :validations => [[lambda{|args| v = args[:hpf_sustain] ; (v == -1) || (v >= 0)}, "must either be a positive value or -1"]],
+            :modulatable => false,
+            :default => "sustain"
+          },
+
+          :hpf_release =>
+          {
+            :doc => "Amount of time (in beats) for sound to move from hpf cutoff sustain value to hpf cutoff min value. Default value is set to match amp envelope's release value.",
+            :validations => [v_positive(:hpf_release)],
+            :modulatable => false,
+            :default => "release"
+          },
+
+          :hpf_env_curve =>
+          {
+            :doc => "Select the shape of the curve between levels in the hpf cutoff envelope. 1=linear, 2=exponential, 3=sine, 4=welch, 6=squared, 7=cubed",
+            :validations => [v_one_of(:hpf_env_curve, [1, 2, 3, 4, 6, 7])],
+            :modulatable => false
+          },
+
+          :hpf_max =>
+          {
+            :doc => "The minimum cutoff value.",
+            :validations => [v_less_than_oet(:hpf_min, 130)],
+            :modulatable => true,
+            :midi => true
+          },
+
+          :hpf_max_slide =>
+          {
+            :doc => generic_slide_doc(:hpf_max),
+            :validations => [v_positive(:hpf_max_slide)],
+            :modulatable => true,
+            :bpm_scale => true
+          },
+
+          :compress =>
+          {
+            :doc => "Enable the compressor. This sits at the end of the internal FX chain immediately before the `amp:` opt. Therefore to drive the compressor use the `pre_amp:` opt which will amplify the signal before it hits any internal FX. The compressor compresses the dynamic range of the incoming signal. Equivalent to automatically turning the amp down when the signal gets too loud and then back up again when it's quiet. Useful for ensuring the containing signal doesn't overwhelm other aspects of the sound. Also a general purpose hard-knee dynamic range processor which can be tuned via the opts to both expand and compress the signal.",
+            :validations => [v_one_of(:compress, [0, 1])],
+            :modulatable => true
+          },
+
+          :threshold =>
+          {
+            :doc => "Threshold value determining the break point between slope_below and slope_above. Only valid if the compressor is enabled by turning on the comp: opt.",
+            :validations => [v_positive(:threshold)],
+            :modulatable => true
+          },
+
+          :threshold_slide =>
+          {
+            :doc => generic_slide_doc(:threshold),
+            :validations => [v_positive(:threshold_slide)],
+            :modulatable => true,
+            :bpm_scale => true
+          },
+
+          :slope_below =>
+          {
+            :doc => "Slope of the amplitude curve below the threshold. A value of 1 means that the output of signals with amplitude below the threshold will be unaffected. Greater values will magnify and smaller values will attenuate the signal. Only valid if the compressor is enabled by turning on the comp: opt.",
+            :validations => [],
+            :modulatable => true
+          },
+
+          :slope_below_slide =>
+          {
+            :doc => generic_slide_doc(:slope_below),
+            :validations => [v_positive(:slope_below_slide)],
+            :modulatable => true,
+            :bpm_scale => true
+          },
+
+          :slope_above =>
+          {
+            :doc => "Slope of the amplitude curve above the threshold. A value of 1 means that the output of signals with amplitude above the threshold will be unaffected. Greater values will magnify and smaller values will attenuate the signal. Only valid if the compressor is enabled by turning on the comp: opt.",
+
+            :validations => [],
+            :modulatable => true
+          },
+
+          :slope_above_slide =>
+          {
+            :doc => generic_slide_doc(:slope_above),
+            :validations => [v_positive(:slope_above_slide)],
+            :modulatable => true,
+            :bpm_scale => true
+          },
+
+          :clamp_time =>
+          {
+            :doc => "Time taken for the amplitude adjustments to kick in fully (in seconds). This is usually pretty small (not much more than 10 milliseconds). Also known as the time of the attack phase. Only valid if the compressor is enabled by turning on the comp: opt.",
+            :validations => [v_positive(:clamp_time)],
+            :modulatable => true
+          },
+
+          :clamp_time_slide =>
+          {
+            :doc => generic_slide_doc(:clamp_time),
+            :validations => [v_positive(:clamp_time_slide)],
+            :modulatable => true,
+            :bpm_scale => true
+          },
+
+          :relax_time =>
+          {
+            :doc => "Time taken for the amplitude adjustments to be released. Usually a little longer than clamp_time. If both times are too short, you can get some (possibly unwanted) artefacts. Also known as the time of the release phase. Only valid if the compressor is enabled by turning on the comp: opt.",
+            :validations => [v_positive(:relax_time)],
+            :modulatable => true
+          },
+
+          :relax_time_slide =>
+          {
+            :doc => generic_slide_doc(:relax_time),
+            :validations => [v_positive(:relax_time_slide)],
+            :modulatable => true,
+            :bpm_scale => true
+          },
+
+          :pre_amp =>
+          {
+            :doc => "Amplitude multiplier which takes place immediately before any internal FX such as the low pass filter, compressor or pitch modification. Use this opt if you want to overload the compressor.",
+            :validations => [v_positive(:pre_amp)],
+            :modulatable => true
+          },
+
+          :pre_amp_slide =>
+          {
+            :doc => generic_slide_doc(:pre_amp),
+            :validations => [v_positive(:pre_amp_slide)],
+            :modulatable => true,
+            :bpm_scale => true
+          }
+
+        })
       end
 
     end
@@ -2964,6 +3532,53 @@ module SonicPi
 
     end
 
+
+    class MainMixer < BaseMixer
+      def name
+        "Main Mixer"
+      end
+
+      def introduced
+        Version.new(2,8,0)
+      end
+
+      def synth_name
+        "mixer"
+      end
+
+      def arg_defaults
+        {
+          :amp_slide => 0.02,
+          :pre_amp_slide => 0.02,
+          :hpf_slide => 0.02,
+          :lpf_slide => 0.02,
+          :pre_amp => 1,
+          :pre_amp_slide_shape => 1,
+          :pre_amp_slide_curve => 0,
+          :amp => 1,
+          :amp_slide_shape => 1,
+          :amp_slide_curve => 0,
+          :hpf => 0,
+          :hpf_bypass => 0,
+          :hpf_slide_shape => 1,
+          :hpf_slide_curve => 0,
+          :lpf => 135.5,
+          :lpf_bypass => 0,
+          :lpf_slide_shape => 1,
+          :lpf_slide_curve => 0,
+          :force_mono => 0,
+          :invert_stereo => 0,
+          :limiter_bypass => 0,
+          :leak_dc_bypass => 0}
+
+      end
+
+      def default_arg_info
+        {}
+      end
+
+    end
+
     class FXInfo < BaseInfo
 
       def trigger_with_logical_clock?
@@ -2986,7 +3601,7 @@ module SonicPi
                       :pre_amp_slide =>
                       {
                         :doc => generic_slide_doc(:pre_amp),
-                        :validations => [v_positive(:pre_amp)],
+                        :validations => [v_positive(:pre_amp_slide)],
                         :modulatable => true
                       },
 
@@ -2997,6 +3612,141 @@ module SonicPi
                         :modulatable => false
                       },
                     })
+      end
+    end
+
+    class FXGVerb < FXInfo
+
+      def name
+        "GVerb"
+      end
+
+
+
+      def introduced
+        Version.new(2,9,0)
+      end
+
+      def synth_name
+        "fx_gverb"
+      end
+
+      def trigger_with_logical_clock?
+        false
+      end
+
+      def doc
+        "Make the incoming signal sound more spacious or distant as if it were played in a large room or cave. Similar to reverb but with a more spacious feel."
+      end
+
+      def arg_defaults
+        {
+          :amp => 1,
+          :amp_slide => 0,
+          :amp_slide_shape => 1,
+          :amp_slide_curve => 0,
+          :mix => 0.4,
+          :mix_slide => 0,
+          :mix_slide_shape => 1,
+          :mix_slide_curve => 0,
+          :pre_amp => 1,
+          :pre_amp_slide => 0,
+          :pre_amp_slide_shape => 1,
+          :pre_amp_slide_curve => 0,
+
+          :spread => 0.5,
+          :spread_slide => 0,
+          :spread_slide_shape => 1,
+          :spread_slide_curve => 0,
+          :damp => 0.5,
+          :damp_slide => 0,
+          :damp_slide_shape => 1,
+          :damp_slide_curve => 0,
+          :pre_damp => 0.5,
+          :pre_damp_slide => 0,
+          :pre_damp_slide_shape => 1,
+          :pre_damp_slide_curve => 0,
+          :dry => 1,
+          :dry_slide => 0,
+          :dry_slide_shape => 1,
+          :dry_slide_curve => 0,
+          :room => 10,
+          :release => 3,
+          :ref_level => 0.7,
+          :tail_level => 0.5
+
+        }
+      end
+
+      def kill_delay(args_h)
+        args_h[:release] || arg_defaults[:release]
+      end
+
+      def specific_arg_info
+        {
+          :release =>
+          {
+            :doc => "Time for reverberation to complete in seconds",
+            :validations => [v_greater_than(:release, 0)],
+            :modulatable => true
+          },
+
+          :spread =>
+          {
+            :doc => "Stereo spread. Amount of stereo spread the reverb has over the left and right channels. A value of 0 means no spread at all - left and right stereo values of the incoming signal are preserved. A value of 1 means full spread - the left and right channels are fully mixed within the reverb - bleeding into each other.",
+            :validations => [v_between_inclusive(:spread, 0, 1)],
+            :modulatable => true
+          },
+
+          :damp =>
+          {
+            :doc => "High frequency rolloff. 0 is no damping (the reverb will ring out more) and 1 dampens the reverb signal completely",
+            :validations => [v_between_inclusive(:damp, 0, 1)],
+            :modulatable => true
+          },
+
+          :pre_damp =>
+          {
+            :doc => "High frequency rolloff of input signal. 0 is no damping (the reverb will ring out more) and 1 dampens the reverb signal completely",
+            :validations => [v_between_inclusive(:pre_damp, 0, 1)],
+            :modulatable => true
+          },
+
+          :dry =>
+          {
+            :doc => "Amount of original dry signal present in the effect. This is distinct from mix.",
+            :validations => [v_greater_than_oet(:dry, 0)],
+            :modulatable => true
+          },
+
+          :room =>
+          {
+            :doc => "The room size in squared metres",
+            :validations => [v_greater_than_oet(:room, 0)],
+            :modulatable => true
+          },
+
+          :ref_level =>
+          {
+            :doc => "Reflection level",
+            :validations => [v_greater_than_oet(:ref_level, 0)],
+            :modulatable => true
+          },
+
+          :tail_level =>
+          {
+            :doc => "Tail level amount",
+            :validations => [v_greater_than_oet(:tail_level, 0)],
+            :modulatable => true
+          },
+
+          :max_room =>
+          {
+            :doc => "Maximum room size",
+            :validations => [v_greater_than(:max_room, 0)],
+            :modulatable => false
+          }
+        }
       end
     end
 
@@ -3263,6 +4013,41 @@ module SonicPi
           :amp_slide => 0,
           :amp_slide_shape => 1,
           :amp_slide_curve => 0,
+        }
+      end
+    end
+
+    class FXMono < FXInfo
+      def name
+        "Mono"
+      end
+
+      def introduced
+        Version.new(2,10,0)
+      end
+
+      def synth_name
+        "fx_mono"
+      end
+
+      def doc
+        "Sum left and right channels. Useful with stereo samples that you need as a mono sound, or for use with panslicer."
+      end
+
+      def arg_defaults
+        {
+          :amp => 1,
+          :amp_slide => 0,
+          :amp_slide_shape => 1,
+          :amp_slide_curve => 0,
+          :pan => 0,
+          :pan_slide => 0,
+          :pan_slide_shape => 1,
+          :pan_slide_curve => 0,
+          :mix => 1,
+          :mix_slide => 0,
+          :mix_slide_shape => 1,
+          :mix_slide_curve => 0,
         }
       end
     end
@@ -4123,7 +4908,7 @@ module SonicPi
           :pan_max =>
           {
             :doc => "Maximum pan value (+1 is the right speaker only)",
-            :validations => [v_between_inclusive(:pan_min, -1, 1)],
+            :validations => [v_between_inclusive(:pan_max, -1, 1)],
             :modulatable => true
           },
 
@@ -4258,6 +5043,80 @@ module SonicPi
       end
     end
 
+    class FXWhammy < FXInfo
+      def name
+        "Whammy"
+      end
+
+      def introduced
+        Version.new(2,10,0)
+      end
+
+      def synth_name
+        "fx_whammy"
+      end
+
+      def doc
+        "A cheap sounding transposition effect, with a slightly robotic edge. Good for adding alien sounds and harmonies to everything from beeps to guitar samples. It's similar to pitch shift although not as smooth sounding."
+      end
+
+      def arg_defaults
+        {
+          :amp => 1,
+          :amp_slide => 0,
+          :amp_slide_shape => 1,
+          :amp_slide_curve => 0,
+          :mix => 1,
+          :pre_amp => 1,
+          :pre_amp_slide => 0,
+          :pre_amp_slide_shape => 1,
+          :pre_amp_slide_curve => 0,
+          :transpose => 12,
+          :transpose_slide => 0,
+          :transpose_slide_shape => 1,
+          :transpose_slide_curve => 0,
+          :max_delay_time => 1,
+          :deltime => 0.05,
+          :grainsize => 0.075
+        }
+      end
+
+      def specific_arg_info
+        {
+
+          :transpose =>
+          {
+            :doc => "This is how much to transpose the input, expressed as a midi pitch.",
+            :modulatable => true
+          },
+
+          :transpose_slide =>
+          {
+            :doc => generic_slide_doc(:transpose),
+            :validations => [v_positive(:transpose_slide)],
+            :modulatable => true,
+          },
+
+          :deltime =>
+          {
+            :doc => "The delay time to be used for the effect. This shouldn't need to be adjusted.",
+            :validations => [v_positive(:deltime)],
+          },
+
+          :max_delay_time =>
+          {
+            :doc => "The max delay time to be used for the effect. This shouldn't need to be adjusted.",
+            :validations => [v_positive(:max_delay_time)],
+          },
+
+          :grainsize =>
+          {
+            :doc => "The size of the initial grain used for transposition. This shouldn't need to be adjusted.",
+            :validations => [v_positive(:grainsize)],
+          },
+        }
+      end
+    end
 
     class FXCompressor < FXInfo
       def name
@@ -4377,7 +5236,7 @@ module SonicPi
           :relax_time =>
           {
             :doc => "Time taken for the amplitude adjustments to be released. Usually a little longer than clamp_time. If both times are too short, you can get some (possibly unwanted) artefacts. Also known as the time of the release phase.",
-            :validations => [v_positive(:clamp_time)],
+            :validations => [v_positive(:relax_time)],
             :modulatable => true
           },
 
@@ -4389,6 +5248,56 @@ module SonicPi
             :bpm_scale => true
           }
         }
+      end
+    end
+
+    class FXVowel < FXInfo
+      def name
+        "Vowel"
+      end
+
+      def introduced
+        Version.new(2,10,0)
+      end
+
+      def synth_name
+        "fx_vowel"
+      end
+
+      def arg_defaults
+        {
+          :amp => 1,
+          :amp_slide => 0,
+          :amp_slide_shape => 1,
+          :amp_slide_curve => 0,
+          :pre_amp => 1,
+          :pre_amp_slide => 0,
+          :pre_amp_slide_shape => 1,
+          :pre_amp_slide_curve => 0,
+          :vowel_sound => 1,
+          :voice => 0
+        }
+      end
+
+      def specific_arg_info
+        {
+          :vowel_sound =>
+          {
+            :doc => "1,2,3,4,5 => A,E,I,O,U",
+            :validations => [v_one_of(:vowel_sound, [1,2,3,4,5])],
+            :modulatable => true
+          },
+          :voice =>
+          {
+            :doc => "0,1,2,3,4 => Soprano,Alto,Counter Tenor, Tenor, Bass",
+            :validations => [v_one_of(:voice, [0,1,2,3,4])],
+            :modulatable => true
+          }
+        }
+      end
+
+      def doc
+        "This effect filters the input to match a human voice singing a certain vowel sound. Human singing voice sounds are easily achieved with a source of a saw wave with a little vibrato."
       end
     end
 
@@ -4419,52 +5328,48 @@ module SonicPi
           :pre_amp_slide => 0,
           :pre_amp_slide_shape => 1,
           :pre_amp_slide_curve => 0,
-          :oct1_amp => 1,
-          :oct1_amp_slide => 0,
-          :oct1_amp_slide_shape => 1,
-          :oct1_amp_slide_curve => 0,
-          :oct1_interval => 12,
-          :oct1_interval_slide => 0,
-          :oct1_interval_slide_shape => 1,
-          :oct1_interval_slide_curve => 0,
-          :oct2_amp => 1,
-          :oct2_amp_slide => 0,
-          :oct2_amp_slide_shape => 1,
-          :oct2_amp_slide_curve => 0,
-          :oct3_amp => 1,
-          :oct3_amp_slide => 0,
-          :oct3_amp_slide_shape => 1,
-          :oct3_amp_slide_curve => 0
+          :super_amp => 1,
+          :super_amp_slide => 0,
+          :super_amp_slide_shape => 1,
+          :super_amp_slide_curve => 0,
+          :sub_amp => 1,
+          :sub_amp_slide => 0,
+          :sub_amp_slide_shape => 1,
+          :sub_amp_slide_curve => 0,
+          :subsub_amp => 1,
+          :subsub_amp_slide => 0,
+          :subsub_amp_slide_shape => 1,
+          :subsub_amp_slide_curve => 0
         }
       end
 
       def specific_arg_info
         {
-          :oct1_amp =>
+          :super_amp =>
           {
             :doc => "Volume of the signal 1 octave above the input",
-            :validations => [v_positive(:oct1_amp)],
+            :validations => [v_positive(:super_amp)],
             :modulatable => true
           },
-          :oct2_amp =>
+          :sub_amp =>
           {
             :doc => "Volume of the signal 1 octave below the input",
-            :validations => [v_positive(:oct2_amp)],
+            :validations => [v_positive(:sub_amp)],
             :modulatable => true
           },
-          :oct3_amp =>
+          :subsub_amp =>
           {
             :doc => "Volume of the signal 2 octaves below the input",
-            :validations => [v_positive(:oct3_amp)],
+            :validations => [v_positive(:subsub_amp)],
             :modulatable => true
           }
         }
       end
 
       def doc
-        "This harmoniser adds three pitches based on the input sound. The first is the original sound transposed up an octave, the second is the original sound transposed down an octave and the third is the original sound transposed down two octaves.
+        "This effect adds three pitches based on the input sound. The first is the original sound transposed up an octave (super_amp), the second is the original sound transposed down an octave (sub_amp) and the third is the original sound transposed down two octaves (subsub_amp).
 
-  The way the transpositions are done adds some distortion, particularly to the lower octaves, whilst the upper octave has a 'cheap' quality. This effect is often used in guitar effects pedals but it can work with other sounds too."
+  The way the transpositions are done adds some distortion/fuzz, particularly to the lower octaves, whilst the upper octave has a 'cheap' quality. This effect is often used in guitar effects pedals but it can work with other sounds too. There's a great description of the science behind this on Wikipedia here: https://en.wikipedia.org/wiki/Octave_effect"
       end
     end
 
@@ -4731,7 +5636,7 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
       end
 
       def doc
-        "Like the Band Pass Filter but with a resonance (slight volume boost) around the target frequency. This can produce an interesting whistling effect, especially when used with smaller values for the res opt."
+        "Like the Band Pass Filter but with a resonance (slight volume boost) around the target frequency. This can produce an interesting whistling effect, especially when used with larger values for the res opt."
       end
     end
 
@@ -4769,7 +5674,7 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
       end
 
       def doc
-        "Like the Band Pass Filter but normalised, with a resonance (slight volume boost) around the target frequency. This can produce an interesting whistling effect, especially when used with smaller values for the res opt.
+        "Like the Band Pass Filter but normalised, with a resonance (slight volume boost) around the target frequency. This can produce an interesting whistling effect, especially when used with larger values for the res opt.
 
   The normaliser is useful here as some volume is lost when filtering the original signal."
       end
@@ -4821,7 +5726,7 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
       end
 
       def doc
-        "Dampens the parts of the signal that are above than the cutoff point (typically the crunchy fizzy harmonic overtones) and keeps the lower parts (typically the bass/mid of the sound). behaviour, The resonant part of the resonant low pass filter emphasises/resonates the frequencies around the cutoff point. The amount of emphasis is controlled by the res param with a lower res resulting in greater resonance. High amounts of resonance (rq ~0) can create a whistling sound around the cutoff frequency.
+        "Dampens the parts of the signal that are higher than the cutoff point (typically the crunchy fizzy harmonic overtones) and keeps the lower parts (typically the bass/mid of the sound). The resonant part of the resonant low pass filter emphasises/resonates the frequencies around the cutoff point. The amount of emphasis is controlled by the res opt with a higher res resulting in greater resonance. High amounts of resonance (rq ~1) can create a whistling sound around the cutoff frequency.
 
   Choose a higher cutoff to keep more of the high frequences/treble of the sound and a lower cutoff to make the sound more dull and only keep the bass."
       end
@@ -4847,7 +5752,7 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
       end
 
       def doc
-        "Dampens the parts of the signal that are lower than the cutoff point (typically the bass of the sound) and keeps the higher parts (typically the crunchy fizzy harmonic overtones). The resonant part of the resonant high pass filter emphasises/resonates the frequencies around the cutoff point. The amount of emphasis is controlled by the res param with a lower res resulting in greater resonance. High amounts of resonance (rq ~0) can create a whistling sound around the cutoff frequency.
+        "Dampens the parts of the signal that are lower than the cutoff point (typically the bass of the sound) and keeps the higher parts (typically the crunchy fizzy harmonic overtones). The resonant part of the resonant high pass filter emphasises/resonates the frequencies around the cutoff point. The amount of emphasis is controlled by the res opt with a higher res resulting in greater resonance. High amounts of resonance (rq ~1) can create a whistling sound around the cutoff frequency.
 
   Choose a lower cutoff to keep more of the bass/mid and a higher cutoff to make the sound more light and crispy."
       end
@@ -4893,7 +5798,7 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
       end
     end
 
-    class FXNormRHPF < FXRLPF
+    class FXNormRHPF < FXRHPF
       def name
         "Normalised Resonant High Pass Filter"
       end
@@ -5024,7 +5929,7 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
 
 
       def doc
-        "Dampens the parts of the signal that are above than the cutoff point (typically the crunchy fizzy harmonic overtones) and keeps the lower parts (typically the bass/mid of the sound). Choose a higher cutoff to keep more of the high frequences/treble of the sound and a lower cutoff to make the sound more dull and only keep the bass."
+        "Dampens the parts of the signal that are higher than the cutoff point (typically the crunchy fizzy harmonic overtones) and keeps the lower parts (typically the bass/mid of the sound). Choose a higher cutoff to keep more of the high frequences/treble of the sound and a lower cutoff to make the sound more dull and only keep the bass."
       end
 
 
@@ -5115,7 +6020,7 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
       end
     end
 
-    class FXNormHPF < FXRLPF
+    class FXNormHPF < FXHPF
       def name
         "Normalised High Pass Filter"
       end
@@ -5224,7 +6129,7 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
           :mix_slide => 0,
           :mix_slide_shape => 1,
           :mix_slide_curve => 0,
-          :krunch => 1,
+          :krunch => 5,
           :krunch_slide => 0,
           :krunch_slide_shape => 1,
           :krunch_slide_curve => 0,
@@ -5242,7 +6147,7 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
           :krunch_slide =>
           {
             :doc => generic_slide_doc(:krunch),
-            :validations => [v_positive(:krunchslide)],
+            :validations => [v_positive(:krunch_slide)],
             :modulatable => true,
             :bpm_scale => true
           }
@@ -5811,6 +6716,7 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
         :tri => Tri.new,
         :dsaw => DSaw.new,
         :dpulse => DPulse.new,
+        :dtri => DTri.new,
         :fm => FM.new,
         :mod_fm => ModFM.new,
         :mod_saw => ModSaw.new,
@@ -5819,6 +6725,8 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
         :mod_beep => ModSine.new,
         :mod_tri => ModTri.new,
         :mod_pulse => ModPulse.new,
+        :chiplead => ChipLead.new,
+        :chipbass => ChipBass.new,
         :tb303 => TB303.new,
         :supersaw => Supersaw.new,
         :hoover => Hoover.new,
@@ -5833,6 +6741,7 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
         :stereo_player => StereoPlayer.new,
         :blade => SynthViolin.new,
         :piano => SynthPiano.new,
+        :pluck => SynthPluck.new,
 
         :sound_in => SoundIn.new,
         :noise => Noise.new,
@@ -5840,16 +6749,20 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
         :bnoise => BNoise.new,
         :gnoise => GNoise.new,
         :cnoise => CNoise.new,
+        :chipnoise => ChipNoise.new,
 
         :basic_mono_player => BasicMonoPlayer.new,
         :basic_stereo_player => BasicStereoPlayer.new,
         :basic_mixer => BasicMixer.new,
+        :main_mixer => MainMixer.new,
 
         :fx_bitcrusher => FXBitcrusher.new,
         :fx_krush => FXKrush.new,
         :fx_reverb => FXReverb.new,
+        :fx_gverb => FXGVerb.new,
         :fx_replace_reverb => FXReverb.new,
         :fx_level => FXLevel.new,
+        :fx_mono => FXMono.new,
         :fx_replace_level => FXLevel.new,
         :fx_echo => FXEcho.new,
         :fx_replace_echo => FXEcho.new,
@@ -5861,6 +6774,7 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
         :fx_ixi_techno => FXIXITechno.new,
         :fx_replace_ixi_techno => FXIXITechno.new,
         :fx_compressor => FXCompressor.new,
+        :fx_whammy => FXWhammy.new,
         :fx_replace_compressor => FXCompressor.new,
         :fx_rlpf => FXRLPF.new,
         :fx_replace_rlpf => FXRLPF.new,
@@ -5893,7 +6807,8 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
         :fx_pitch_shift => FXPitchShift.new,
         :fx_ring_mod => FXRingMod.new,
         #:fx_chorus => FXChorus.new,
-        #:fx_harmoniser => FXHarmoniser.new,
+        :fx_octaver => FXOctaver.new,
+        :fx_vowel => FXVowel.new,
         :fx_flanger => FXFlanger.new
       }
 
@@ -5945,10 +6860,9 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
           doc << "<p><table class=\"arguments\"><tr>\n"
           cnt = 0
           v.arg_info.each do |ak, av|
-            doc << "</tr><tr>" if (cnt > 0) and cnt % 6 == 0
-            td_class = cnt.even? ? "even" : "odd"
-            doc << "<td class=\"#{td_class}\"><a href=\"##{ak}\">#{ak}:</a></td>\n"
-            doc << "<td class=\"#{td_class}\">#{av[:default]}</td>\n"
+            doc << "</tr><tr>" if (cnt > 0) and cnt % 4 == 0
+            doc << "<td class=\"even\"><a href=\"##{ak}\">#{ak}:</a></td>\n"
+            doc << "<td class=\"odd\">#{av[:default]}</td>\n"
             cnt += 1
           end
           doc << "</tr></table></p>\n\n"
@@ -5970,7 +6884,7 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
           doc << "<p class=\"introduced\">"
           doc << "Introduced in " << v.introduced.to_s << "</p>\n\n"
 
-          doc << "<h2>Parameters</h2>\n"
+          doc << "<h2>Options</h2>\n"
 
           doc << "<p><table class=\"details\">\n"
 
@@ -5988,7 +6902,7 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
             doc << "   Default: #{av[:default]}\n"
             doc << "   <br/>#{av[:constraints].join(",").capitalize}\n" unless av[:constraints].empty?
             doc << "   <br/>#{av[:modulatable] ? "May be changed whilst playing" : "Can not be changed once set"}\n"
-            doc << "   <br/><a href=\"#slide\">Has slide parameters to shape changes</a>\n" if av[:slidable]
+            doc << "   <br/><a href=\"#slide\">Has slide options to shape changes</a>\n" if av[:slidable]
             doc << "   <br/>Scaled with current BPM value\n" if av[:bpm_scale]
             doc << "  </p>\n"
             doc << " </td>\n"
@@ -6000,8 +6914,8 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
 
           if any_slidable then
             doc << "<a name=slide></a>\n"
-            doc << "<h2>Slide Parameters</h2>\n"
-            doc << "<p>Any parameter that is slidable has three additional parameters named _slide, _slide_curve, and _slide_shape.  For example, 'amp' is slidable, so you can also set amp_slide, amp_slide_curve, and amp_slide_shape with the following effects:</p>\n"
+            doc << "<h2>Slide Options</h2>\n"
+            doc << "<p>Any parameter that is slidable has three additional options named _slide, _slide_curve, and _slide_shape.  For example, 'amp' is slidable, so you can also set amp_slide, amp_slide_curve, and amp_slide_shape with the following effects:</p>\n"
             slide_args = {
               :_slide => {:default => 0, :doc=>v.generic_slide_doc('parameter')},
               :_slide_shape => {:default=>5, :doc=>v.generic_slide_shape_doc('parameter')},
@@ -6040,12 +6954,14 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
 
         get_all.each do |k, v|
           next unless v.is_a? klass
+          next if k.to_s.include? 'replace_'
           snake_case = v.name.downcase.gsub(/ /, "-")
           res << "* [#{v.name}](##{snake_case})\n"
         end
         res << "\n"
         get_all.each do |k, v|
           next unless v.is_a? klass
+          next if k.to_s.include? 'replace_'
           res << "## " << v.name << "\n\n"
           res << "### Key:\n"
           mk = key_mod ? key_mod.call(k) : k
@@ -6061,7 +6977,7 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
             res << "    - #{av[:modulatable] ? "May be changed whilst playing" : "Can not be changed once set"}\n"
             res << "    - Scaled with current BPM value\n" if av[:bpm_scale]
             res << "    - Accepts note symbols such as :e3\n" if av[:midi]
-            res << "    - Has slide parameters for shaping changes\n" if av[:slidable]
+            res << "    - Has slide options for shaping changes\n" if av[:slidable]
           end
           res << "\n\n"
 
@@ -6096,10 +7012,9 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
           doc << "<h1>" << v[:desc] << "</h1>\n"
           doc << "<p><table class=\"arguments\"><tr>\n"
           StereoPlayer.new.arg_info.each do |ak, av|
-            doc << "</tr><tr>" if (cnt > 0) and cnt % 6 == 0
-            td_class = cnt.even? ? "even" : "odd"
-            doc << "<td class=\"#{td_class}\"><a href=\"##{ak}\">#{ak}:</a></td>\n"
-            doc << "<td class=\"#{td_class}\">#{av[:default]}</td>\n"
+            doc << "</tr><tr>" if (cnt > 0) and cnt % 4 == 0
+            doc << "<td class=\"even\"><a href=\"##{ak}\">#{ak}:</a></td>\n"
+            doc << "<td class=\"odd\">#{av[:default]}</td>\n"
             cnt += 1
           end
           doc << "</tr></table></p>\n"
@@ -6115,11 +7030,10 @@ Use FX `:band_eq` with a negative db for the opposite effect - to attenuate a gi
 
           cnt = 0
           StereoPlayer.new.arg_info.each do |ak, av|
-            td_class = cnt.even? ? "even" : "odd"
             doc << "<a name=\"#{ak}\"></a>\n"
             doc << "<tr>\n"
-            doc << " <td class=\"#{td_class} key\">#{ak}:</td>\n"
-            doc << " <td class=\"#{td_class}\">\n"
+            doc << " <td class=\"even key\">#{ak}:</td>\n"
+            doc << " <td class=\"odd\">\n"
             doc << "  <p>#{av[:doc] || 'write me'}</p>\n"
             doc << "  <p class=\"properties\">\n"
             doc << "   Default: #{av[:default]}\n"

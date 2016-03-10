@@ -3,7 +3,7 @@
 # Full project source: https://github.com/samaaron/sonic-pi
 # License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 #
-# Copyright 2013, 2014, 2015 by Sam Aaron (http://sam.aaron.name).
+# Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 # All rights reserved.
 #
 # Permission is granted for use, copying, modification, and
@@ -20,9 +20,15 @@ module SonicPi
       path = path.encode('utf-8')
       @path = path
       begin
-        @repo = Rugged::Repository.new(path + '/.git')
-      rescue Rugged::OSError => e
-        @repo = Rugged::Repository.init_at path, false
+        @repo = Rugged::Repository.new(path + '.git')
+      rescue
+        begin
+          @repo = Rugged::Repository.init_at path, false
+        rescue
+          # Repo is malformed - nuke it for now!
+          FileUtils.rm_rf path + '.git'
+          @repo = Rugged::Repository.init_at path, false
+        end
       end
     end
 

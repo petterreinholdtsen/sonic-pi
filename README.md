@@ -75,6 +75,8 @@ Sonic Pi's built in tutorial has been translated into several languages thanks t
 :pt:         | Portuguese    | in progress |              | @SiIky |
 :sp:         | Spanish       | in progress |              | @merongivian, @thraex41 |
 :nl:         | Dutch         | in progress | @DuchessFounder | @DuchessFounder, @PrisDiest |
+:gr:         | Greek         | in progress | @aspra       | @aspra |
+:nb:         | Norwegian Bokmål | in progress | @petterreinholdtsen | @petterreinholdtsen |
 
 Would you like to contribute a translation too? If so, please take a look at our [translation docs](https://github.com/samaaron/sonic-pi/blob/master/TRANSLATION.md) to get started. Additionally [here](https://github.com/samaaron/sonic-pi/issues?utf8=%E2%9C%93&q=is%3Aissue+is%3Aopen+i18n) you can find translations (i18n) related issues.
 
@@ -93,4 +95,5 @@ Sonic Pi is under active development, and welcomes new contributors:
 
 [![Gitter](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/samaaron/sonic-pi?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 <br/>
-<img src="https://travis-ci.org/samaaron/sonic-pi.svg?branch=master"/>
+[![Travis CI](https://travis-ci.org/samaaron/sonic-pi.svg?branch=master)](https://travis-ci.org/samaaron/sonic-pi)
+

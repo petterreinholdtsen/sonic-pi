@@ -3,7 +3,7 @@
 # Full project source: https://github.com/samaaron/sonic-pi
 # License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 #
-# Copyright 2013, 2014, 2015 by Sam Aaron (http://sam.aaron.name).
+# Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 # All rights reserved.
 #
 # Permission is granted for use, copying, modification, and
@@ -18,7 +18,7 @@ require_relative "controlbusallocator"
 require_relative "promise"
 require_relative "incomingevents"
 require_relative "counter"
-require_relative "buffer"
+require_relative "lazybuffer"
 require_relative "bufferstream"
 require_relative "scsynthexternal"
 #require_relative "scsynthnative"
@@ -332,16 +332,15 @@ module SonicPi
     def buffer_info(id)
       prom = Promise.new
       @osc_events.add_handler(@osc_path_b_info, @osc_events.gensym("/sonicpi/server")) do |payload|
-        if (id == payload.to_a[0])
-          prom.deliver!  payload
+        p = payload.to_a
+        if (id == p[0])
+          p.shift
+          prom.deliver! p
           :remove_handler
         end
       end
       osc @osc_path_b_query, id
-      res = prom.get
-
-      args = res.to_a
-      Buffer.new(self, args[0], args[1], args[2], args[3])
+      LazyBuffer.new(self, id, prom)
     end
 
     def with_done_sync(&block)
@@ -372,17 +371,24 @@ module SonicPi
       res
     end
 
-    def status
+    def status(timeout=nil)
       prom = Promise.new
       res = nil
 
-      @osc_events.oneshot_handler("/status.reply") do |pl|
+      key = @osc_events.gensym("/status.reply")
+      @osc_events.async_add_handler("/status.reply", key) do |pl|
         prom.deliver! pl
+        :remove_handler
       end
 
       with_server_sync do
         osc @osc_path_status
-        res = prom.get
+        begin
+          res = prom.get(timeout)
+        rescue PromiseTimeoutError => e
+          @osc_events.rm_handler("/status.reply", key)
+          return nil
+        end
       end
 
       args = res.to_a
@@ -442,8 +448,9 @@ module SonicPi
       @osc_events.async_event handle, payload
     end
 
-    def exit
-      osc @osc_path_quit
+    def shutdown
+      @scsynth.shutdown
+      @osc_events.shutdown
     end
 
   end

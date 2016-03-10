@@ -3,7 +3,7 @@
 # Full project source: https://github.com/samaaron/sonic-pi
 # License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 #
-# Copyright 2013, 2014, 2015 by Sam Aaron (http://sam.aaron.name).
+# Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 # All rights reserved.
 #
 # Permission is granted for use, copying, modification, and
@@ -20,6 +20,7 @@ require_relative "../blanknode"
 require_relative "../chainnode"
 require_relative "../fxnode"
 require_relative "../fxreplacenode"
+require_relative "../lazynode"
 require_relative "../note"
 require_relative "../scale"
 require_relative "../chord"
@@ -27,6 +28,7 @@ require_relative "../chordgroup"
 require_relative "../synthtracker"
 require_relative "../version"
 require_relative "../tuning"
+require_relative "../sample_loader"
 require_relative "support/docsystem"
 
 class Symbol
@@ -38,6 +40,15 @@ class Symbol
   def +(other)
     return self if (self == :r) || (self == :rest)
     SonicPi::Note.resolve_midi_note_without_octave(self) + SonicPi::Note.resolve_midi_note_without_octave(other)
+  end
+
+  def to_f
+    return 0.0 if (self == :r) || (self == :rest)
+    SonicPi::Note.resolve_midi_note_without_octave(self).to_f
+  end
+
+  def to_i
+    self.to_f.to_i
   end
 end
 
@@ -58,20 +69,22 @@ module SonicPi
       include SonicPi::Util
       include SonicPi::Lang::Support::DocSystem
 
-      DEFAULT_PLAY_OPTS = {amp:       "The amplitude of the note",
-        amp_slide: "The duration in beats for amplitude changes to take place",
-        pan:       "The stereo position of the sound. -1 is left, 0 is in the middle and 1 is on the right. You may use a value in between -1 and 1 such as 0.25",
-        pan_slide: "The duration in beats for the pan value to change",
-        attack: "Amount of time (in beats) for sound to reach full amplitude (attack_level). A short attack (i.e. 0.01) makes the initial part of the sound very percussive like a sharp tap. A longer attack (i.e 1) fades the sound in gently.",
-        decay: "Amount of time (in beats) for the sound to move from full amplitude (attack_level) to the sustain amplitude (sustain_level).",
-        sustain:  "Amount of time (in beats) for sound to remain at sustain level amplitude. Longer sustain values result in longer sounds. Full length of sound is attack + decay + sustain + release.",
-        release:   "Amount of time (in beats) for sound to move from sustain level amplitude to silent. A short release (i.e. 0.01) makes the final part of the sound very percussive (potentially resulting in a click). A longer release (i.e 1) fades the sound out gently.",
-        attack_level: "Amplitude level reached after attack phase and immediately before decay phase",
-        decay_level: "Amplitude level reached after decay phase and immediately before sustain phase. Defaults to sustain_level unless explicitly set",
+      DEFAULT_PLAY_OPTS = {
+        amp:           "The amplitude of the note",
+        amp_slide:     "The duration in beats for amplitude changes to take place",
+        pan:           "The stereo position of the sound. -1 is left, 0 is in the middle and 1 is on the right. You may use a value in between -1 and 1 such as 0.25",
+        pan_slide:     "The duration in beats for the pan value to change",
+        attack:        "Amount of time (in beats) for sound to reach full amplitude (attack_level). A short attack (i.e. 0.01) makes the initial part of the sound very percussive like a sharp tap. A longer attack (i.e 1) fades the sound in gently.",
+        decay:         "Amount of time (in beats) for the sound to move from full amplitude (attack_level) to the sustain amplitude (sustain_level).",
+        sustain:       "Amount of time (in beats) for sound to remain at sustain level amplitude. Longer sustain values result in longer sounds. Full length of sound is attack + decay + sustain + release.",
+        release:       "Amount of time (in beats) for sound to move from sustain level amplitude to silent. A short release (i.e. 0.01) makes the final part of the sound very percussive (potentially resulting in a click). A longer release (i.e 1) fades the sound out gently.",
+        attack_level:  "Amplitude level reached after attack phase and immediately before decay phase",
+        decay_level:   "Amplitude level reached after decay phase and immediately before sustain phase. Defaults to sustain_level unless explicitly set",
         sustain_level: "Amplitude level reached after decay phase and immediately before release phase.",
-        env_curve: "Select the shape of the curve between levels in the envelope. 1=linear, 2=exponential, 3=sine, 4=welch, 6=squared, 7=cubed",
-        slide:     "Default slide time in beats for all slide opts. Individually specified slide opts will override this value",
-        on: "If specified and false/nil/0 will stop the synth from being played. Ensures all opts are evaluated."}
+        env_curve:     "Select the shape of the curve between levels in the envelope. 1=linear, 2=exponential, 3=sine, 4=welch, 6=squared, 7=cubed",
+        slide:         "Default slide time in beats for all slide opts. Individually specified slide opts will override this value",
+        pitch:         "Pitch adjustment in semitones. 1 is up a semitone, 12 is up an octave, -12 is down an octave etc.  Decimal numbers can be used for fine tuning.",
+        on:            "If specified and false/nil/0 will stop the synth from being played. Ensures all opts are evaluated."}
 
 
 
@@ -82,9 +95,10 @@ module SonicPi
           define_method(:initialize) do |*splat, &block|
             sonic_pi_mods_sound_initialize_old *splat, &block
             hostname, port, msg_queue, max_concurrent_synths = *splat
+            @server_init_args = splat.take(4)
 
-            @mod_sound_home_dir = File.expand_path('~/')
-            @simple_sampler_args = [:amp, :amp_slide, :amp_slide_shape, :amp_slide_curve, :pan, :pan_slide, :pan_slide_shape, :pan_slide_curve, :cutoff, :cutoff_slide, :cutoff_slide_shape, :cutoff_slide_curve, :res, :res_slide, :res_slide_shape, :res_slide_curve, :rate, :slide, :beat_stretch, :rpitch]
+            @mod_sound_home_dir = Dir.home
+            @simple_sampler_args = [:amp, :amp_slide, :amp_slide_shape, :amp_slide_curve, :pan, :pan_slide, :pan_slide_shape, :pan_slide_curve, :cutoff, :cutoff_slide, :cutoff_slide_shape, :cutoff_slide_curve, :lpf, :lpf_slide, :lpf_slide_shape, :lpf_slide_curve, :hpf, :hpf_slide, :hpf_slide_shape, :hpf_slide_curve, :rate, :slide, :beat_stretch, :rpitch, :attack, :decay, :sustain, :release, :attack_level, :decay_level, :sustain_level, :env_curve]
 
             @tuning = Tuning.new
 
@@ -96,15 +110,35 @@ module SonicPi
 
             @sample_paths_cache = {}
 
-            @JOB_GROUPS_A = Atom.new(Hamster.hash)
+            @sample_loader = SampleLoader.new(samples_path)
+
+            @JOB_GROUPS_A = Atom.new(Hamster::Hash.new)
             @JOB_GROUP_MUTEX = Mutex.new
             @JOB_FX_GROUP_MUTEX = Mutex.new
-            @JOB_FX_GROUPS_A = Atom.new(Hamster.hash)
-            @JOB_MIXERS_A = Atom.new(Hamster.hash)
+            @JOB_FX_GROUPS_A = Atom.new(Hamster::Hash.new)
+            @JOB_MIXERS_A = Atom.new(Hamster::Hash.new)
             @JOB_MIXERS_MUTEX = Mutex.new
-            @JOB_BUSSES_A = Atom.new(Hamster.hash)
+            @JOB_BUSSES_A = Atom.new(Hamster::Hash.new)
             @JOB_BUSSES_MUTEX = Mutex.new
             @mod_sound_studio = Studio.new(hostname, port, msg_queue, max_concurrent_synths)
+
+            @mod_sound_studio_checker = Thread.new do
+              # kill all jobs if an error occured in the studio
+              Thread.current.thread_variable_set(:sonic_pi_thread_group, "studio checker")
+              Thread.current.priority = 200
+              loop do
+                Kernel.sleep 5
+                begin
+                  error = @mod_sound_studio.error_occurred?
+                  if error
+                    __stop_jobs
+                  end
+                rescue Exception => e
+                  __info "exception: #{e.message}, #{e.backtrace}"
+                  __stop_jobs
+                end
+              end
+            end
 
             @life_hooks.on_init do |job_id, payload|
               @job_proms_queues_mut.synchronize do
@@ -150,12 +184,139 @@ module SonicPi
             end
 
             @events.add_handler("/exit", @events.gensym("/mods-sound-exit")) do |payload|
-              @mod_sound_studio.exit
+              @mod_sound_studio.shutdown
               nil
             end
           end
         end
       end
+
+      # Deprecated fns
+
+      def current_sample_pack_aliases(*args)
+        raise "Sorry, current_sample_pack_aliases is no longer supported since v2.10"
+      end
+
+      def with_sample_pack_as(*args)
+        raise "Sorry, with_sample_pack_as is no longer supported since v2.10"
+      end
+
+      def use_sample_pack_as(*args)
+        raise "Sorry, use_sample_pack_as is no longer supported since v2.10"
+      end
+
+
+
+
+      def reboot
+        return nil if @mod_sound_studio.rebooting
+        __no_kill_block do
+          __stop_other_jobs
+          __info "Rebooting sound server"
+          res = @mod_sound_studio.reboot
+
+          if res
+            __info "Reboot successful - sound server ready."
+          else
+            __info "Reboot unsuccessful - reboot already in progress."
+          end
+        end
+        stop
+      end
+
+
+
+
+      def octs(start, num_octs=1)
+        a = []
+        num_octs.times do |i|
+          a << (note(start) + (12 * i))
+        end
+        a.ring
+      end
+      doc name:           :octs,
+          introduced:     Version.new(2,8,0),
+          summary:        "Create a ring of octaves",
+          args:           [[:start, :note], [:num_octaves, :pos_int]],
+          returns:        :ring,
+          opts:           nil,
+          accepts_block:  false,
+          doc:            "Create a ring of successive octaves starting at `start` for `num_octaves`. ",
+          examples:       [
+        "(octs 60, 2)  #=> (ring 60, 72)",
+        "(octs :e3, 3) #=> (ring 52, 64, 76)"
+]
+
+
+
+
+      def sample_free(*paths)
+        paths.each do |p|
+          p = [p] unless p.is_a?(Array)
+          filts_and_sources, args_a = sample_split_filts_and_opts(p)
+          sample_paths(filts_and_sources).each do |p|
+            if sample_loaded?(p)
+              @mod_sound_studio.free_sample([p])
+              __info "Freed sample: #{p.inspect}"
+            end
+          end
+        end
+
+
+      end
+      doc name:           :sample_free,
+          introduced:     Version.new(2,9,0),
+          summary:        "Free a sample on the synth server",
+          args:           [[:path, :string]],
+          returns:        nil,
+          opts:           nil,
+          accepts_block:  false,
+          doc:            "Frees the memory and resources consumed by loading the sample on the server. Subsequent calls to `sample` and friends will re-load the sample on the server. You may pass multiple samples to free at once.",
+          examples:       ["
+sample :loop_amen # The Amen break is now loaded into memory and played
+sleep 2
+sample :loop_amen # The Amen break is not loaded but played from memory
+sleep 2
+sample_free :loop_amen # The Amen break is freed from memory
+sample :loop_amen # the Amen break is re-loaded and played",
+
+"
+puts sample_info(:loop_amen).to_i # This returns the buffer id of the sample i.e. 1
+puts sample_info(:loop_amen).to_i # The buffer id remains constant whilst the sample
+                                  # is loaded in memory
+sample_free :loop_amen
+puts sample_info(:loop_amen).to_i # The Amen break is re-loaded and gets a *new* id.",
+"
+sample :loop_amen
+sample :ambi_lunar_land
+sleep 2
+sample_free :loop_amen, :ambi_lunar_land
+sample :loop_amen                        # re-loads and plays amen
+sample :ambi_lunar_land                  # re-loads and plays lunar land"]
+
+
+
+
+      def sample_free_all
+        @mod_sound_studio.free_all_samples
+      end
+      doc name:           :sample_free_all,
+          introduced:     Version.new(2,9,0),
+          summary:        "Free all loaded samples on the synth server",
+          args:           [[]],
+          returns:        nil,
+          opts:           nil,
+          accepts_block:  false,
+          doc:            "Unloads all samples therefore freeing the memory and resources consumed. Subsequent calls to `sample` and friends will re-load the sample on the server.",
+          examples:       ["
+sample :loop_amen        # load and play :loop_amen
+sample :ambi_lunar_land  # load and play :ambi_lunar_land
+sleep 2
+sample_free_all
+sample :loop_amen        # re-loads and plays amen"]
+
+
+
 
       def start_amp_monitor
         @mod_sound_studio.start_amp_monitor
@@ -242,26 +403,10 @@ module SonicPi
         if args_h.has_key?(:on)
           on = args_h.delete(:on)
           return truthy?(on)
+        else
+          return true
         end
-
-        tls = if sample
-                Thread.current.thread_variable_get(:sonic_pi_mod_sound_sample_defaults)
-              else
-                Thread.current.thread_variable_get(:sonic_pi_mod_sound_synth_defaults)
-              end
-
-        return true unless tls
-
-        if tls.has_key?(:on)
-          # need to normalise it!
-          on = tls.delete(:on)
-          return truthy?(on)
-
-        end
-
-        true
       end
-
 
 
 
@@ -291,7 +436,7 @@ module SonicPi
 
         # Don't use sample_duration as that is stretched to the current
         # bpm!
-        sd = load_sample(sample_name).duration
+        sd = sample_buffer(sample_name).duration
         use_bpm(num_beats * (60.0 / sd))
       end
       doc name:           :use_sample_bpm,
@@ -330,7 +475,7 @@ end"]
         num_beats = args_h[:num_beats] || 1
         # Don't use sample_duration as that is stretched to the current
         # bpm!
-        sd = load_sample(sample_name).duration
+        sd = sample_buffer(sample_name).duration
         with_bpm(num_beats * (60.0 / sd), &block)
       end
       doc name:           :with_sample_bpm,
@@ -660,6 +805,137 @@ play 90 # Args are checked
 
 "]
 
+      def set_cent_tuning!(shift)
+        @mod_sound_studio.cent_tuning = shift
+      end
+      doc name:          :set_cent_tuning!,
+          introduced:    Version.new(2,10,0),
+          summary:       "Global Cent tuning",
+          doc:           "Globally tune Sonic Pi to play with another external instrument.
+
+Uniformly tunes your music by shifting all notes played by the specified number of cents. To shift up by a cent use a cent tuning of 1. To shift down use negative numbers. One semitone consists of 100 cents.
+
+See `use_cent_tuning` for setting the cent tuning value locally for a specific thread or `live_loop`. This is a global value and will shift the tuning for *all* notes. It will also persist for the entire session.
+
+Important note: the cent tuning set by `set_cent_tuning!` is independent of any thread-local cent tuning values set by `use_cent_tuning` or `with_cent_tuning`. ",
+          args:          [[:cent_shift, :number]],
+          opts:          nil,
+          accepts_block: false,
+          intro_fn:       false,
+          examples:      ["
+play 50 # Plays note 50
+set_cent_tuning! 1
+play 50 # Plays note 50.01"]
+
+      def use_cent_tuning(shift, &block)
+        raise "use_cent_tuning does not work with a do/end block. Perhaps you meant with_cent_tuning" if block
+        raise "Cent tuning value must be a number, got #{shift.inspect}" unless shift.is_a?(Numeric)
+        Thread.current.thread_variable_set(:sonic_pi_mod_sound_cent_tuning, shift)
+      end
+      doc name:          :use_cent_tuning,
+          introduced:    Version.new(2,9,0),
+          summary:       "Cent tuning",
+          doc:           "Uniformly tunes your music by shifting all notes played by the specified number of cents. To shift up by a cent use a cent tuning of 1. To shift down use negative numbers. One semitone consists of 100 cents.
+
+See `with_cent_tuning` for setting the cent tuning value only for a specific `do`/`end` block. To tranpose entire semitones see `use_transpose`.",
+          args:          [[:cent_shift, :number]],
+          opts:          nil,
+          accepts_block: false,
+          intro_fn:       true,
+          examples:      ["
+play 50 # Plays note 50
+use_cent_tuning 1
+play 50 # Plays note 50.01"]
+
+
+
+
+      def with_cent_tuning(shift, &block)
+        raise "with_cent_tuning requires a do/end block. Perhaps you meant use_cent_tuning" unless block
+        raise "Cent tuning value must be a number, got #{shift.inspect}" unless shift.is_a?(Numeric)
+        curr = Thread.current.thread_variable_get(:sonic_pi_mod_sound_cent_tuning)
+        Thread.current.thread_variable_set(:sonic_pi_mod_sound_cent_tuning, shift)
+        res = block.call
+        Thread.current.thread_variable_set(:sonic_pi_mod_sound_cent_tuning, curr)
+        res
+      end
+      doc name:           :with_cent_tuning,
+          introduced:     Version.new(2,9,0),
+          summary:        "Block-level cent tuning",
+          doc:            "Similar to `use_cent_tuning` except only applies cent shift to code within supplied `do`/`end` block. Previous cent tuning value is restored after block. One semitone consists of 100 cents. To tranpose entire semitones see `with_transpose`.",
+          args:           [[:cent_shift, :number]],
+          opts:           nil,
+          accepts_block:  true,
+          requires_block: true,
+          examples:       ["
+use_cent_tuning 1
+play 50 # Plays note 50.01
+
+with_cent_tuning 2 do
+  play 50 # Plays note 50.02
+end
+
+# Original cent tuning value is restored
+play 50 # Plays note 50.01
+
+"]
+
+
+
+      def use_octave(shift, &block)
+        raise "use_octave does not work with a do/end block. Perhaps you meant with_octave" if block
+        raise "Octave shift must be a number, got #{shift.inspect}" unless shift.is_a?(Numeric)
+        Thread.current.thread_variable_set(:sonic_pi_mod_sound_octave_shift, shift)
+      end
+      doc name:          :use_octave,
+          introduced:    Version.new(2,9,0),
+          summary:       "Note octave transposition",
+          doc:           "Transposes your music by shifting all notes played by the specified number of octaves. To shift up by an octave use a transpose of 1. To shift down use negative numbers. See `with_octave` for setting the octave shift only for a specific `do`/`end` block. For transposing the notes within the octave range see `use_transpose`.",
+          args:          [[:octave_shift, :number]],
+          opts:          nil,
+          accepts_block: false,
+          intro_fn:      true,
+          examples:      ["
+play 50 # Plays note 50
+use_octave 1
+play 50 # Plays note 62",
+
+        "
+# You may change the transposition multiple times:
+play 62 # Plays note 62
+use_octave -1
+play 62 # Plays note 50
+use_octave 2
+play 62 # Plays note 86"]
+
+
+
+      def with_octave(shift, &block)
+        raise "with_octave requires a do/end block. Perhaps you meant use_octave" unless block
+        raise "Octave shift must be a number, got #{shift.inspect}" unless shift.is_a?(Numeric)
+        curr = Thread.current.thread_variable_get(:sonic_pi_mod_sound_octave_shift)
+        Thread.current.thread_variable_set(:sonic_pi_mod_sound_octave_shift, shift)
+        res = block.call
+        Thread.current.thread_variable_set(:sonic_pi_mod_sound_octave_shift, curr)
+        res
+      end
+      doc name:          :with_octave,
+          introduced:    Version.new(2,9,0),
+          summary:       "Block level octave transposition",
+          doc:           "Transposes your music by shifting all notes played by the specified number of octaves within the specified block. To shift up by an octave use a transpose of 1. To shift down use negative numbers. For transposing the notes within the octave range see `with_transpose`.",
+          args:          [[:octave_shift, :number]],
+          opts:          nil,
+          accepts_block: true,
+          intro_fn:      true,
+          examples:      ["
+play 50 # Plays note 50
+sleep 1
+with_octave 1 do
+ play 50 # Plays note 62
+end
+sleep 1
+play 50 # Plays note 50"]
+
 
 
 
@@ -671,7 +947,7 @@ play 90 # Args are checked
       doc name:          :use_transpose,
           introduced:    Version.new(2,0,0),
           summary:       "Note transposition",
-          doc:           "Transposes your music by shifting all notes played by the specified amount. To shift up by a semitone use a transpose of 1. To shift down use negative numbers. See `with_transpose` for setting the transpose value only for a specific `do`/`end` block.",
+          doc:           "Transposes your music by shifting all notes played by the specified amount. To shift up by a semitone use a transpose of 1. To shift down use negative numbers. See `with_transpose` for setting the transpose value only for a specific `do`/`end` block. To transpose entire octaves see `use_octave`.",
           args:          [[:note_shift, :number]],
           opts:          nil,
           accepts_block: false,
@@ -704,7 +980,7 @@ play 62 # Plays note 65"]
       doc name:           :with_transpose,
           introduced:     Version.new(2,0,0),
           summary:        "Block-level note transposition",
-          doc:            "Similar to use_transpose except only applies to code within supplied `do`/`end` block. Previous transpose value is restored after block.",
+          doc:            "Similar to use_transpose except only applies to code within supplied `do`/`end` block. Previous transpose value is restored after block. To transpose entire octaves see `with_octave`.",
           args:           [[:note_shift, :number]],
           opts:           nil,
           accepts_block:  true,
@@ -732,7 +1008,7 @@ play 80 # Plays note 83
       doc name:          :use_tuning,
           introduced:    Version.new(2,6,0),
           summary:       "Use alternative tuning systems",
-          doc:           "In most music we make semitones by dividing the octave into 12 equal parts, which is known as equal temperament. However there are lots of other ways to tune the 12 notes. This method adjusts each midi note into the specified tuning system. Because the ratios between notes aren't always equal, be careful to pick a centre note that is in the key of the music you're making for the best sound. Currently available tunings are :just, :pythagorean, :meantone and the default of :equal",
+          doc:           "In most music we make semitones by dividing the octave into 12 equal parts, which is known as equal temperament. However there are lots of other ways to tune the 12 notes. This method adjusts each midi note into the specified tuning system. Because the ratios between notes aren't always equal, be careful to pick a centre note that is in the key of the music you're making for the best sound. Currently available tunings are `:just`, `:pythagorean`, `:meantone` and the default of `:equal`",
           args:          [[:tuning, :symbol], [:fundamental_note, :symbol_or_number]],
           opts:          nil,
           accepts_block: false,
@@ -915,13 +1191,33 @@ play 50 # Plays with supersaw synth
 
 
 
+      def reset_mixer!()
+        @mod_sound_studio.mixer_reset
+      end
+      doc name:          :reset_mixer!,
+          introduced:    Version.new(2,9,0),
+          summary:       "Reset master mixer",
+          doc:           "The master mixer is the final mixer that all sound passes through. This fn resets it to its default set - undoing any changes made via set_mixer_control!",
+          args:          [],
+          opts:          {},
+          accepts_block: false,
+          examples:      ["
+set_mixer_control! lpf: 70 # LPF cutoff value of master mixer is now 70
+sample :loop_amen          # :loop_amen sample is played with low cutoff
+sleep 3
+reset_mixer!               # mixer is now reset to default values
+sample :loop_amen          # :loop_amen sample is played with normal cutoff"]
+
+
+
+
       def set_mixer_control!(opts)
         @mod_sound_studio.mixer_control(opts)
       end
       doc name:          :set_mixer_control!,
           introduced:    Version.new(2,7,0),
           summary:       "Control master mixer",
-          doc:           "The master mixer is the final mixer that all sound passes through. This fn gives you control over the master mixer allowing you to manipulate all the sound playing through Sonic Pi at once. For example, you can sweep a lpf or hpf over the entire sound.",
+          doc:           "The master mixer is the final mixer that all sound passes through. This fn gives you control over the master mixer allowing you to manipulate all the sound playing through Sonic Pi at once. For example, you can sweep a lpf or hpf over the entire sound. You can reset the controls back to their defaults with `reset_mixer!`.",
           args:          [],
           opts:          {pre_amp:        "Controls the amplitude of the signal prior to the FX stage of the mixer (prior to lpf/hpf stages). Has slide opts. Default 1.",
                           amp:            "Controls the amplitude of the signal after the FX stage. Has slide opts. Default 1.",
@@ -956,15 +1252,21 @@ set_mixer_control! lpf: 30, lpf_slide: 16 # slide the global lpf to 30 over 16 b
 
 
       def synth(synth_name, *args)
-        ensure_good_timing!
+        synth_name = current_synth unless synth_name
         args_h = resolve_synth_opts_hash_or_array(args)
+        tls = Thread.current.thread_variable_get(:sonic_pi_mod_sound_synth_defaults) || {}
+
+        args_h = tls.merge(args_h)
 
         return nil unless should_trigger?(args_h)
 
         if rest? args_h
-          __delayed_message "synth #{synth_name.to_sym.inspect}, {note: :rest}"
-          return nil
+          unless Thread.current.thread_variable_get(:sonic_pi_mod_sound_synth_silent)
+            __delayed_message "synth #{synth_name.to_sym.inspect}, {note: :rest}"
+          end
+          return @blank_node
         end
+
 
         notes = args_h[:notes] || args_h[:note]
         if notes.is_a?(SonicPi::Core::RingVector) || notes.is_a?(Array)
@@ -982,12 +1284,24 @@ set_mixer_control! lpf: 30, lpf_slide: 16 # slide the global lpf to 30 over 16 b
       doc name:          :synth,
           introduced:    Version.new(2,0,0),
           summary:       "Trigger specific synth",
-          doc:           "Trigger specified synth with given arguments. Bypasses current synth value, yet still honours synth defaults.",
+          doc:           "Trigger specified synth with given opts. Bypasses `current_synth` value, yet still honours `current_synth_defaults`. When using `synth`, the note is no longer an explicit argument but an opt with the key `note:`.
+
+If note: opt is `nil`, `:r` or `:rest`, play is ignored and treated as a rest. Also, if the `on:` opt is specified and returns `false`, or `nil` then play is similarly ignored and treated as a rest.
+
+If the synth name is `nil` behaviour is identical to that of `play` in that the `current_synth` will determine the actual synth triggered.
+
+Note that the default opts listed are only a guide to the most common opts across all the synths. Not all synths support all the default opts and each synth typically supports many more opts specific to that synth. For example, the `:tb303` synth supports 45 unique opts. For a full list of a synth's opts see its documentation in the Help system. This can be accessed directly by clicking on the name of the synth and using the shortcut `C-i`",
           args:          [[:synth_name, :symbol]],
-          opts:          {:slide => "Default slide time in beats for all slide opts. Individually specified slide opts will override this value",
-                          :on => "If specified and false/nil/0 will stop the synth from being played. Ensures all opts are evaluated."},
+          opts:          DEFAULT_PLAY_OPTS,
           accepts_block: false,
-          examples:      ["
+      examples:      [
+"
+use_synth :beep            # Set current synth to :beep
+play 60                    # Play note 60 with opt defaults
+
+synth :dsaw, note: 60    # Bypass current synth and play :dsaw
+                         # with note 60 and opt defaults ",
+"
 synth :fm, note: 60, amp: 0.5 # Play note 60 of the :fm synth with an amplitude of 0.5",
 
         "
@@ -1025,39 +1339,11 @@ end
 
 
       def play(n, *args)
-        ensure_good_timing!
-        case n
-        when Array, SonicPi::Core::RingVector
-          return play_chord(n, *args)
-        when Hash
-          # Allow a single hash argument to function unsurprisingly
-          if args.empty?
-            args = n
-          else
-            args_h = resolve_synth_opts_hash_or_array(args)
-            args = n.merge(args_h)
-          end
+        if n.is_a?(Hash) && args.empty?
+          synth nil, n
+        else
+          synth nil, {note: n}, *args
         end
-
-        n = note(n)
-
-        synth_name = current_synth_name
-
-        if n.nil?
-          unless Thread.current.thread_variable_get(:sonic_pi_mod_sound_synth_silent)
-            __delayed_message "synth #{synth_name.to_sym.inspect}, {note: :rest}"
-          end
-
-          return nil
-        end
-
-        init_args_h = {}
-        args_h = resolve_synth_opts_hash_or_array(args)
-
-        return nil unless should_trigger?(args_h)
-
-        n = normalise_transpose_and_tune_note_from_args(n, args_h)
-        trigger_inst synth_name, {note: n}.merge(init_args_h.merge(args_h))
       end
       doc name:          :play,
           introduced:    Version.new(2,0,0),
@@ -1066,7 +1352,9 @@ end
 
 Accepts optional args for modification of the synth being played. See each synth's documentation for synth-specific opts. See `use_synth` and `with_synth` for changing the current synth.
 
-If note is `nil`, `:r` or `:rest`, play is ignored and treated as a rest.
+If note is `nil`, `:r` or `:rest`, play is ignored and treated as a rest. Also, if the `on:` opt is specified and returns `false`, or `nil` then play is similarly ignored and treated as a rest.
+
+Note that the default opts listed are only a guide to the most common opts across all the synths. Not all synths support all the default opts and each synth typically supports many more opts specific to that synth. For example, the `:tb303` synth supports 45 unique opts. For a full list of a synth's opts see its documentation in the Help system.
     ",
           args:          [[:note, :symbol_or_number]],
           opts:          DEFAULT_PLAY_OPTS,
@@ -1181,7 +1469,6 @@ play 44"]
 
 
       def play_chord(notes, *args)
-        ensure_good_timing!
         args_h = resolve_synth_opts_hash_or_array(args)
         return nil unless should_trigger?(args_h)
         shifted_notes = notes.map {|n| normalise_transpose_and_tune_note_from_args(n, args_h)}
@@ -1269,7 +1556,7 @@ play 50 #=> Plays note 50 with amp 0.7, cutoff 80 and pan -1"]
       doc name:           :with_merged_synth_defaults,
           introduced:     Version.new(2,0,0),
           summary:        "Block-level merge synth defaults",
-          doc:            "Specify synth arg values to be used by any following call to play within the specified `do`/`end` block. Merges the specified values with any previous defaults, rather than replacing them. After the `do`/`end` block has completed, previous defaults (if any) are restored.",
+          doc:            "Specify synth arg values to be used by any following call to play within the specified `do`/`end` block. Merges the specified values with any previous synth defaults, rather than replacing them. After the `do`/`end` block has completed, previous defaults (if any) are restored.",
           args:           [],
           opts:           {},
           accepts_block:  true,
@@ -1346,6 +1633,33 @@ sample :loop_amen  # plays amen break with a cutoff of 90 and defaults for rest 
 "]
 
 
+      def use_merged_sample_defaults(*args, &block)
+        raise "use_merged_sample_defaults does not work with a block. Perhaps you meant with_merged_sample_defaults" if block
+        current_defs = Thread.current.thread_variable_get(:sonic_pi_mod_sound_sample_defaults)
+        args_h = resolve_synth_opts_hash_or_array(args)
+        merged_defs = (current_defs || {}).merge(args_h)
+        Thread.current.thread_variable_set :sonic_pi_mod_sound_sample_defaults, merged_defs
+      end
+      doc name:          :use_merged_sample_defaults,
+          introduced:    Version.new(2,9,0),
+          summary:       "Merge new sample defaults",
+          doc:           "Specify new default values to be used by all subsequent calls to `sample`. Merges the specified values with any previous defaults, rather than replacing them.",
+          args:          [],
+          opts:          {},
+          accepts_block: false,
+          examples:      ["
+sample :loop_amen # plays amen break with default arguments
+
+use_merged_sample_defaults amp: 0.5, cutoff: 70
+
+sample :loop_amen # plays amen break with an amp of 0.5, cutoff of 70 and defaults for rest of args
+
+use_merged_sample_defaults cutoff: 90
+
+sample :loop_amen  # plays amen break with a cutoff of 90 and and an amp of 0.5 with defaults for rest of args
+"]
+
+
 
 
 
@@ -1375,6 +1689,40 @@ sample :loop_amen # plays amen break with an amp of 0.5, cutoff of 70 and defaul
 
 with_sample_defaults cutoff: 90 do
   sample :loop_amen  # plays amen break with a cutoff of 90 and defaults for rest of args - note that amp is no longer 0.5
+end
+
+sample :loop_amen  # plays amen break with a cutoff of 70 and amp is 0.5 again as the previous defaults are restored."]
+
+
+
+
+      def with_merged_sample_defaults(*args, &block)
+        raise "with_merged_sample_defaults must be called with a do/end block. Perhaps you meant use_merged_sample_defaults" unless block
+        current_defs = Thread.current.thread_variable_get(:sonic_pi_mod_sound_sample_defaults)
+        args_h = resolve_synth_opts_hash_or_array(args)
+        merged_defs = (current_defs || {}).merge(args_h)
+        Thread.current.thread_variable_set :sonic_pi_mod_sound_sample_defaults, merged_defs
+        res = block.call
+        Thread.current.thread_variable_set :sonic_pi_mod_sound_sample_defaults, current_defs
+        res
+      end
+      doc name:           :with_merged_sample_defaults,
+          introduced:     Version.new(2,9,0),
+          summary:        "Block-level use merged sample defaults",
+          doc:            "Specify new default values to be used by all subsequent calls to `sample` within the `do`/`end` block.  Merges the specified values with any previous sample defaults, rather than replacing them. After the `do`/`end` block has completed, the previous sampled defaults (if any) are restored.",
+          args:           [],
+          opts:           {},
+          accepts_block:  false,
+          requires_block: false,
+          examples:       ["
+sample :loop_amen # plays amen break with default arguments
+
+use_merged_sample_defaults amp: 0.5, cutoff: 70
+
+sample :loop_amen # plays amen break with an amp of 0.5, cutoff of 70 and defaults for rest of args
+
+with_merged_sample_defaults cutoff: 90 do
+  sample :loop_amen  # plays amen break with a cutoff of 90 and amp of 0.5
 end
 
 sample :loop_amen  # plays amen break with a cutoff of 70 and amp is 0.5 again as the previous defaults are restored."]
@@ -1671,6 +2019,8 @@ play 60 # plays note 60 with an amp of 0.5, pan of -1 and defaults for rest of a
 
           :sonic_pi_mod_sound_synth_silent,
           :sonic_pi_mod_sound_transpose,
+          :sonic_pi_mod_sound_cent_tuning,
+          :sonic_pi_mod_sound_octave_shift,
           :sonic_pi_mod_sound_disable_timing_warnings,
           :sonic_pi_mod_sound_check_synth_args,
           :sonic_pi_mod_sound_tuning,
@@ -1779,48 +2129,19 @@ end
       doc name:          :use_sample_pack,
           introduced:    Version.new(2,0,0),
           summary:       "Use sample pack",
-          doc:           "Given a path to a folder of samples on your filesystem, this method makes any `.wav`, `.wave`, `.aif` or `.aiff` files in that folder available as samples. Consider using `use_sample_pack_as` when using multiple sample packs. Use `use_sample_pack :default` To revert back to the default built-in samples.",
+          doc:           "Given a path to a folder of samples on your filesystem, this method makes any `.wav`, `.wave`, `.aif`, `.aiff` or `.flac` files in that folder available as samples. Use `use_sample_pack :default` To revert back to the default built-in samples.",
           args:          [[:pack_path, :string]],
           opts:          nil,
           accepts_block: false,
           examples:
         ["
 use_sample_pack '/home/yourname/path/to/sample/dir'
-sample :foo  #=> plays /home/yourname/path/to/sample/dir/foo.{wav|wave|aif|aiff}
-             #   where {wav|wave|aif|aiff} means one of wav, wave aif or aiff.
+sample :foo  #=> plays /home/yourname/path/to/sample/dir/foo.{wav|wave|aif|aiff|flac}
+             #   where {wav|wave|aif|aiff|flac} means one of wav, wave, aif, aiff or flac.
 sample :bd_haus #=> will not work unless there's a sample in '/home/yourname/path/to/sample/dir'
-                #   called bd_haus.{wav|wave|aif|aiff}
+                #   called bd_haus.{wav|wave|aif|aiff|flac}
 use_sample_pack :default
 sample :bd_haus #=> will play the built-in bd_haus.wav sample" ]
-
-
-
-
-      def use_sample_pack_as(pack, pack_alias, &block)
-        raise "use_sample_pack_as does not work with a block. Perhaps you meant with_sample_pack_as" if block
-        pack = "#{pack}/" if File.directory?(pack)
-        aliases = Thread.current.thread_variable_get(:sonic_pi_mod_sound_sample_aliases) || Hamster.hash
-        new_aliases = aliases.put pack_alias.to_s, pack
-        Thread.current.thread_variable_set(:sonic_pi_mod_sound_sample_aliases, new_aliases)
-      end
-      doc name:          :use_sample_pack_as,
-          introduced:    Version.new(2,0,0),
-          summary:       "Use sample pack alias",
-          doc:           "Similar to `use_sample_pack` except you can assign prefix aliases for samples. This lets you 'namespace' your sounds so that they don't clash, even if they have the same filename.",
-          args:          [[:path, :string], [:alias, :string]],
-          opts:          nil,
-          accepts_block: false,
-          examples:      ["
-# let's say you have two folders of your own sample files,
-# and they both contain a file named 'bass.wav'
-use_sample_pack_as '/home/yourname/my/cool/samples/guitar', :my_guitars
-use_sample_pack_as '/home/yourname/my/cool/samples/drums', :my_drums
-
-# You can now play both the 'bass.wav' samples, as they've had the symbol stuck on the front
-sample :my_guitars__bass    #=> plays '/home/yourname/my/cool/samples/guitar/bass.wav'
-sample :my_drums__bass  #=> plays '/home/yourname/my/cool/samples/drums/bass.wav'"]
-
-
 
 
       def with_sample_pack(pack, &block)
@@ -1841,42 +2162,14 @@ sample :my_drums__bass  #=> plays '/home/yourname/my/cool/samples/drums/bass.wav
       doc name:           :with_sample_pack,
           introduced:     Version.new(2,0,0),
           summary:        "Block-level use sample pack",
-          doc:            "Given a path to a folder of samples on your filesystem, this method makes any `.wav`, `.wave`, `.aif`, or `.aiff` files in that folder available as samples inside the given block. Consider using `with_sample_pack_as` when using multiple sample packs.",
+          doc:            "Given a path to a folder of samples on your filesystem, this method makes any `.wav`, `.wave`, `.aif`, `.aiff` or `.flac` files in that folder available as samples inside the given block.",
           args:           [[:pack_path, :string]],
           opts:           nil,
           accepts_block:  true,
           requires_block: true,
           examples:       ["
 with_sample_pack '/path/to/sample/dir' do
-  sample :foo  #=> plays /path/to/sample/dir/foo.{wav|wave|aif|aiff}
-end"]
-
-
-
-
-      def with_sample_pack_as(pack, name, &block)
-        raise "with_sample_pack_as requires a do/end block. Perhaps you meant use_sample_pack_as" unless block
-        pack = "#{pack}/" if File.directory?(pack)
-        current = Thread.current.thread_variable_get(:sonic_pi_mod_sound_sample_aliases)
-        aliases = current || Hamster.hash
-        new_aliases = aliases.put name.to_s, pack
-        Thread.current.thread_variable_set(:sonic_pi_mod_sound_sample_aliases, new_aliases)
-        res = block.call
-        Thread.current.thread_variable_set(:sonic_pi_mod_sound_sample_aliases, current)
-        res
-      end
-      doc name:           :with_sample_pack_as,
-          introduced:     Version.new(2,0,0),
-          summary:        "Block-level use sample pack alias",
-          doc:            "Similar to `with_sample_pack` except you can assign prefix aliases for samples. This lets you 'namespace' your sounds so that they don't clash, even if they have the same filename.",
-          args:           [[:pack_path, :string]],
-          opts:           nil,
-          accepts_block:  true,
-          requires_block: true,
-          examples:       ["
-with_sample_pack_as '/home/yourname/path/to/sample/dir', :my_samples do
-  # The foo sample is now available, with a prefix of 'my_samples'
-  sample :my_samples__foo  #=> plays /home/yourname/path/to/sample/dir/foo.{wav|wave|aif|aiff}
+  sample :foo  #=> plays /path/to/sample/dir/foo.{wav|wave|aif|aiff|flac}
 end"]
 
 
@@ -1888,7 +2181,9 @@ end"]
       doc name:          :current_synth,
           introduced:    Version.new(2,0,0),
           summary:       "Get current synth",
-          doc:           "Returns the current synth name.",
+          doc:           "Returns the current synth name.
+
+This can be set via the fns `use_synth` and `with_synth`.",
           args:          [],
           opts:          nil,
           accepts_block: false,
@@ -1904,7 +2199,9 @@ puts current_synth # Print out the current synth name"]
       doc name:          :current_sample_pack,
           introduced:    Version.new(2,0,0),
           summary:       "Get current sample pack",
-          doc:           "Returns the current sample pack.",
+          doc:           "Returns the current sample pack.
+
+This can be set via the fns `use_sample_pack` and `with_sample_pack`.",
           args:          [],
           opts:          nil,
           accepts_block: false,
@@ -1914,18 +2211,7 @@ puts current_sample_pack # Print out the current sample pack"]
 
 
 
-      def current_sample_pack_aliases
-        Thread.current.thread_variable_get(:sonic_pi_mod_sound_sample_aliases)
-      end
-      doc name:          :current_sample_pack_aliases,
-          introduced:    Version.new(2,0,0),
-          summary:       "Get current sample pack aliases",
-          doc:           "Returns a map containing the current sample pack aliases.",
-          args:          [],
-          opts:          nil,
-          accepts_block: false,
-          examples:      ["
-puts current_sample_pack_aliases # Print out the current sample pack aliases"]
+
 
 
 
@@ -1936,7 +2222,9 @@ puts current_sample_pack_aliases # Print out the current sample pack aliases"]
       doc name:          :current_synth_defaults,
           introduced:    Version.new(2,0,0),
           summary:       "Get current synth defaults",
-          doc:           "Returns the current synth defaults. This is a map of synth arg names to either values or functions.",
+          doc:           "Returns the current synth defaults. This is a map of synth arg names to either values or functions.
+
+This can be set via the fns `use_synth_defaults`, `with_synth_defaults`, `use_merged_synth_defaults` and `with_merged_synth_defaults`.",
           args:          [],
           opts:          nil,
           accepts_block: false,
@@ -1954,7 +2242,9 @@ puts current_synth_defaults #=> Prints {amp: 0.5, cutoff: 80}"]
       doc name:          :current_sample_defaults,
           introduced:    Version.new(2,5,0),
           summary:       "Get current sample defaults",
-          doc:           "Returns the current sample defaults. This is a map of synth arg names to either values or functions.",
+          doc:           "Returns the current sample defaults. This is a map of synth arg names to either values or functions.
+
+This can be set via the fns `use_sample_defaults`, `with_sample_defaults`, `use_merged_sample_defaults` and `with_merged_sample_defaults`.",
           args:          [],
           opts:          nil,
           accepts_block: false,
@@ -1972,7 +2262,9 @@ puts current_sample_defaults #=> Prints {amp: 0.5, cutoff: 80}"]
       doc name:          :current_sched_ahead_time,
           introduced:    Version.new(2,0,0),
           summary:       "Get current sched ahead time",
-          doc:           "Returns the current schedule ahead time.",
+          doc:           "Returns the current schedule ahead time.
+
+This can be set via the fn `set_sched_ahead_time!`.",
           args:          [],
           opts:          nil,
           accepts_block: false,
@@ -1989,7 +2281,9 @@ puts current_sched_ahead_time # Prints 0.5"]
       doc name:          :current_volume,
           introduced:    Version.new(2,0,0),
           summary:       "Get current volume",
-          doc:           "Returns the current volume.",
+          doc:           "Returns the current volume.
+
+This can be set via the fn `set_volume!`.",
           args:          [],
           opts:          nil,
           accepts_block: false,
@@ -2007,7 +2301,9 @@ puts current_volume #=> 2"]
       doc name:          :current_transpose,
           introduced:    Version.new(2,0,0),
           summary:       "Get current transposition",
-          doc:           "Returns the current transpose value.",
+          doc:           "Returns the current transpose value.
+
+This can be set via the fns `use_transpose` and `with_transpose`.",
           args:          [],
           opts:          nil,
           accepts_block: false,
@@ -2017,13 +2313,50 @@ puts current_transpose # Print out the current transpose value"]
 
 
 
+      def current_cent_tuning
+        Thread.current.thread_variable_get(:sonic_pi_mod_sound_cent_tuning) || 0
+      end
+      doc name:          :current_cent_tuning,
+          introduced:    Version.new(2,9,0),
+          summary:       "Get current cent shift",
+          doc:           "Returns the cent shift value.
+
+This can be set via the fns `use_cent_tuning` and `with_cent_tuning`.",
+          args:          [],
+          opts:          nil,
+          accepts_block: false,
+          examples:      ["
+puts current_cent_tuning # Print out the current cent shift"]
+
+
+
+
+      def current_octave
+        Thread.current.thread_variable_get(:sonic_pi_mod_sound_octave_shift) || 0
+      end
+      doc name:          :current_octave,
+          introduced:    Version.new(2,9,0),
+          summary:       "Get current octave shift",
+          doc:           "Returns the octave shift value.
+
+This can be set via the fns `use_octave` and `with_octave`.",
+          args:          [],
+          opts:          nil,
+          accepts_block: false,
+          examples:      ["
+puts current_octave # Print out the current octave shift"]
+
+
+
       def current_debug
         Thread.current.thread_variable_get(:sonic_pi_mod_sound_synth_silent)
       end
       doc name:          :current_debug,
           introduced:    Version.new(2,0,0),
           summary:       "Get current debug status",
-          doc:           "Returns the current debug setting (`true` or `false`).",
+          doc:           "Returns the current debug setting (`true` or `false`).
+
+This can be set via the fns `use_debug` and `with_debug`.",
           args:          [],
           opts:          nil,
           accepts_block: false,
@@ -2039,7 +2372,9 @@ puts current_debug # Print out the current debug setting"]
       doc name:          :current_arg_checks,
           introduced:    Version.new(2,0,0),
           summary:       "Get current arg checking status",
-          doc:           "Returns the current arg checking setting (`true` or `false`).",
+          doc:           "Returns the current arg checking setting (`true` or `false`).
+
+This can be set via the fns `use_arg_checks` and `with_arg_checks`.",
           args:          [],
           opts:          nil,
           accepts_block: false,
@@ -2080,22 +2415,18 @@ set_volume! 2 # Set the main system volume to 2",
 
 
 
-      def sample_loaded?(path)
-        case path
-        when Symbol
-          full_path = resolve_sample_symbol_path(path)
-          return @mod_sound_studio.sample_loaded?(full_path)
-        when String
-          path = File.expand_path(path)
-          return @mod_sound_studio.sample_loaded?(path)
-        else
-          raise "Unknown sample description: #{path}"
-        end
+      def sample_loaded?(*args)
+        filts_and_sources, args_a = sample_split_filts_and_opts(args)
+        path = sample_path(filts_and_sources)
+
+        path = File.expand_path(path)
+        return @mod_sound_studio.sample_loaded?(path)
       end
+
       doc name:          :sample_loaded?,
           introduced:    Version.new(2,2,0),
           summary:       "Test if sample was pre-loaded",
-          doc:           "Given a path to a `.wav`, `.wave`, `.aif` or `.aiff` file, returns `true` if the sample has already been loaded.",
+          doc:           "Given a path to a `.wav`, `.wave`, `.aif`, `.aiff` or `.flac` file, returns `true` if the sample has already been loaded.",
           args:          [[:path, :string]],
           opts:          nil,
           accepts_block: false,
@@ -2105,9 +2436,41 @@ puts sample_loaded? :elec_blip # prints true because it has been pre-loaded
 puts sample_loaded? :misc_burp # prints false because it has not been loaded"]
 
 
+      def load_sample(*args)
+        filts_and_sources, args_a = sample_split_filts_and_opts(args)
+        paths = sample_find_candidates(filts_and_sources)
+        paths.map do |p|
+          load_sample_at_path p
+        end
+      end
+      doc name:          :load_sample,
+          introduced:    Version.new(2,0,0),
+          summary:       "Pre-load sample(s)",
+          doc:           "Given a path to a `.wav`, `.wave`, `.aif`, `.aiff` or `.flac` file, this loads the file and makes it available as a sample. You may pass multiple samples to load them all in one go",
+          args:          [[:path, :string]],
+          opts:          nil,
+          accepts_block: false,
+          examples:      ["
+load_sample :elec_blip # :elec_blip is now loaded and ready to play as a sample
+sample :elec_blip # No delay takes place when attempting to trigger it"]
 
 
-      def load_sample(path)
+      def load_samples(*args)
+        load_sample(*args)
+      end
+      doc name:          :load_samples,
+          introduced:    Version.new(2,0,0),
+          summary:       "Pre-load samples",
+          doc:           "Synonym for load_sample",
+          args:          [[:paths, :list]],
+          opts:          nil,
+          accepts_block: false,
+          examples:      ["# See load_sample for examples"]
+
+
+
+
+      def load_sample_at_path(path)
         case path
         when Symbol
           full_path = resolve_sample_symbol_path(path)
@@ -2117,68 +2480,19 @@ puts sample_loaded? :misc_burp # prints false because it has not been loaded"]
         when String
           raise "Attempted to load sample with an empty string as path" if path.empty?
           path = File.expand_path(path)
-          if File.exists?(path)
-            info, cached = @mod_sound_studio.load_sample(path)
-            __info "Loaded sample #{path.inspect}" unless cached
-            return info
-          else
-            raise "No sample exists with path #{path}"
-          end
+          info, cached = @mod_sound_studio.load_sample(path)
+          __info "Loaded sample #{unify_tilde_dir(path).inspect}" unless cached
+          return info
         else
-          raise "Unknown sample description: #{path}. Expected a symbol such as :loop_amen or a string containing a path."
+          raise "Unknown sample description: #{path.inspect}\n Expected a symbol such as :loop_amen or a string containing a path."
         end
       end
-      doc name:          :load_sample,
-          introduced:    Version.new(2,0,0),
-          summary:       "Pre-load sample",
-          doc:           "Given a path to a `.wav`, `.wave`, `.aif` or `.aiff` file, this loads the file and makes it available as a sample. See `load_samples` for loading multiple samples in one go.",
-          args:          [[:path, :string]],
-          opts:          nil,
-          accepts_block: false,
-          examples:      ["
-load_sample :elec_blip # :elec_blip is now loaded and ready to play as a sample
-sample :elec_blip # No delay takes place when attempting to trigger it"]
 
 
 
 
-      def load_samples(*paths)
-        paths.each do |p|
-          if p.kind_of?(Array)
-            load_samples *p
-          else
-            load_sample p
-          end
-        end
-      end
-      doc name:          :load_samples,
-          introduced:    Version.new(2,0,0),
-          summary:       "Pre-load samples",
-          doc:           "Given an array of paths to `.wav`, `.wave`, `.aif` or `.aiff` files, loads them all into memory so that they may be played with via sample with no delay. See `load_sample`.",
-          args:          [[:paths, :list]],
-          opts:          nil,
-          accepts_block: false,
-          examples:      ["
-sample :ambi_choir # This has to first load the sample before it can play it which may
-                   # cause unwanted delay.
-
-load_samples [:elec_plip, :elec_blip] # Let's load some samples in advance of using them
-sample :elec_plip                     # When we play :elec_plip, there is no extra delay
-                                      # as it has already been loaded.",
-
-        "
-load_samples :elec_plip, :elec_blip # You may omit the square brackets, and
-                                    # simply list all samples you wish to load
-sample :elec_blip                   # Before playing them.",
-        "
-load_samples [\"/home/pi/samples/foo.wav\"] # You may also load full paths to samples.
-sample \"/home/pi/sample/foo.wav\"          # And then trigger them with no more loading."]
-
-
-
-
-      def sample_info(path)
-        load_sample(path)
+      def sample_info(*args)
+        sample_buffer(*args)
       end
       doc name:          :sample_info,
           introduced:    Version.new(2,0,0),
@@ -2192,8 +2506,10 @@ sample \"/home/pi/sample/foo.wav\"          # And then trigger them with no more
 
 
 
-      def sample_buffer(path)
-        load_sample(path)
+      def sample_buffer(*args)
+        filts_and_sources, args_a = sample_split_filts_and_opts(args)
+        path = sample_path(filts_and_sources)
+        load_sample_at_path(path)
       end
       doc name:          :sample_buffer,
           introduced:    Version.new(2,0,0),
@@ -2207,9 +2523,16 @@ sample \"/home/pi/sample/foo.wav\"          # And then trigger them with no more
 
 
 
-      def sample_duration(path, *args)
-        dur = load_sample(path).duration
-        args_h = resolve_synth_opts_hash_or_array(args)
+      def sample_duration(*args)
+        filts_and_sources, args_a = sample_split_filts_and_opts(args)
+        path = sample_path(filts_and_sources)
+        dur = load_sample_at_path(path).duration
+        args_h = merge_synth_arg_maps_array(args_a)
+        t_l_args = Thread.current.thread_variable_get(:sonic_pi_mod_sound_sample_defaults) || {}
+        t_l_args.each do |k, v|
+            args_h[k] = v unless args_h.has_key? k
+        end
+
         args_h[:rate] = 1 unless args_h[:rate]
         start = args_h[:start] || 0
         start = [1, [0, start].max].min
@@ -2226,7 +2549,7 @@ sample \"/home/pi/sample/foo.wav\"          # And then trigger them with no more
 
         if args_h[:pitch_stretch]
           pitch_stretch = args_h[:pitch_stretch].to_f
-          pitch_rate_mod = (1.0 / pitch_stretch) * args_h[:rate] * (current_bpm / (60.0 / dur))
+          pitch_rate_mod = (1.0 / pitch_stretch) * (current_bpm / (60.0 / dur))
           args_h[:rate] = args_h[:rate] * pitch_rate_mod
         end
 
@@ -2256,10 +2579,13 @@ sample \"/home/pi/sample/foo.wav\"          # And then trigger them with no more
           return real_dur
         end
       end
+
       doc name:          :sample_duration,
           introduced:    Version.new(2,0,0),
           summary:       "Get duration of sample in beats",
-          doc:           "Given the name of a loaded sample, or a path to a `.wav`, `.wave`, `.aif` or `.aiff` file returns the length of time in beats that the sample would play for. `sample_duration` understands and accounts for all the opts you can pass to `sample` which have an effect on the playback duration such as `rate:`. The time returned is scaled to the current bpm.",
+          doc:           "Given the name of a loaded sample, or a path to a `.wav`, `.wave`, `.aif`, `.aiff` or `.flac` file returns the length of time in beats that the sample would play for. `sample_duration` understands and accounts for all the opts you can pass to `sample` which have an effect on the playback duration such as `rate:`. The time returned is scaled to the current bpm.
+
+*Note:* avoid using `sample_duration` to set the sleep time in `live_loop`s, prefer stretching the sample with the `beat_stretch:` opt or changing the BPM instead. See the examples below for details.",
           args:          [[:path, :string]],
           opts:          {:rate    => "Rate modifier. For example, doubling the rate will halve the duration.",
                           :start   => "Start position of sample playback as a value from 0 to 1",
@@ -2399,80 +2725,76 @@ sample :loop_amen                    # starting it again
 
       ]
 
-
-
-
-      def sample(path, *args_a_or_h)
-        return if path == nil
-
-        # Allow for hash only variant with :sample_name
-        # and procs as sample name inline with note()
-        case path
-        when Proc
-          return sample(path.call, *args_a_or_h)
-        when Hash
-          if path.has_key? :name
-            # handle case where sample receives Hash and args
-            new_path = path.delete(:name)
-            args_h = resolve_synth_opts_hash_or_array(args_a_or_h)
-            return sample(new_path, path.merge(args_h))
-          else
-            return nil
-          end
-        end
-
-        ensure_good_timing!
-        if path.is_a? Buffer
-          buf_info = path
-          if buf_info.path
-            path = buf_info.path
-          else
-            path = "Buffer [#{buffer_info.id}]"
-          end
+      def sample_split_filts_and_opts(args)
+        idx = args.find_index {|el| el.is_a?(Hash)}
+        if idx
+          filts_and_sources =  args[0...idx]
+          opts = args[idx..-1]
         else
-          buf_info = load_sample(path)
+          filts_and_sources =  args
+          opts = {}
         end
-        args_h = resolve_synth_opts_hash_or_array(args_a_or_h)
+
+        return filts_and_sources, opts
+      end
+
+      def sample_paths(filts_and_sources)
+        sample_find_candidates(filts_and_sources)
+      end
+
+      def sample_path(filts_and_sources)
+        sample_paths(filts_and_sources)[0]
+      end
+
+      def sample(*args)
+        filts_and_sources, args_a = sample_split_filts_and_opts(args)
+        args_h = merge_synth_arg_maps_array(args_a)
+        tls = Thread.current.thread_variable_get(:sonic_pi_mod_sound_sample_defaults) || {}
+
+        args_h = tls.merge(args_h)
+
 
         return nil unless should_trigger?(args_h, true)
 
-        stretch_duration = args_h[:beat_stretch]
-        if stretch_duration
-          raise "beat_stretch: opt needs to be a positive number. Got: #{stretch_duration.inspect}" unless stretch_duration.is_a?(Numeric) && stretch_duration > 0
-          stretch_duration = stretch_duration.to_f
-          rate = args_h[:rate] || 1
-          dur = load_sample(path).duration
-          args_h[:rate] = (1.0 / stretch_duration) * rate * (current_bpm / (60.0 / dur))
+        if filts_and_sources.size == 0
+          if args_h.has_key?(:name)
+            # handle case where sample receives only opts
+            path = sample_path(args_h.delete(:name))
+          else
+            return nil
+          end
+        else
+          path = sample_path(filts_and_sources)
         end
 
-        pitch_stretch_duration = args_h[:pitch_stretch]
-        if pitch_stretch_duration
-          raise "pitch_stretch: opt needs to be a positive number. Got: #{pitch_stretch_duration.inspect}" unless pitch_stretch_duration.is_a?(Numeric) && pitch_stretch_duration > 0
-          pitch_stretch_duration = pitch_stretch_duration.to_f
-          rate = args_h[:rate] || 1
-          dur = load_sample(path).duration
-          new_rate = (1.0 / pitch_stretch_duration) * rate * (current_bpm / (60.0 / dur))
-          pitch_shift = ratio_to_pitch(new_rate)
-          args_h[:rate] = new_rate * (args_h[:rate] || 1)
-          args_h[:pitch] = args_h[:pitch].to_f - pitch_shift
-        end
+        return if path == nil
 
-        rate_pitch = args_h[:rpitch]
-        if rate_pitch
-          new_rate = pitch_to_ratio(rate_pitch.to_f)
-          args_h[:rate] = new_rate * (args_h[:rate] || 1)
-        end
+        info = Synths::SynthInfo.get_info(:stereo_player)
+        path = unify_tilde_dir(path) if path.is_a? String
 
-        trigger_sampler path, buf_info.id, buf_info.num_chans, args_h
+        # Combine thread local defaults here as
+        # normalise_and_resolve_synth_args has only been taught about
+        # synth thread local defaults
+
+        args_h = normalise_and_resolve_sample_args(path, args_h, info)
+
+        if @mod_sound_studio.sample_loaded?(path)
+          return trigger_sampler path, args_h, info
+        else
+          res = Promise.new
+          in_thread { res.deliver!(trigger_sampler path, args_h, info) }
+          return LazyNode.new(res)
+        end
       end
+
       doc name:          :sample,
           introduced:    Version.new(2,0,0),
           summary:       "Trigger sample",
-          doc:           "This is the main method for playing back recorded sound files (samples). Sonic Pi comes with lots of great samples included (see the section under help) but you can also load and play `.wav`, `.wave`, `.aif` or `.aiff` files from anywhere on your computer too. The `rate:` opt affects both the speed and the pitch of the playback. To control the rate of the sample in a pitch-meaningful way take a look at the `rpitch:` opt.
+          doc:           "This is the main method for playing back recorded sound files (samples). Sonic Pi comes with lots of great samples included (see the section under help) but you can also load and play `.wav`, `.wave`, `.aif`, `.aiff` or `.flac` files from anywhere on your computer too. The `rate:` opt affects both the speed and the pitch of the playback. To control the rate of the sample in a pitch-meaningful way take a look at the `rpitch:` opt.
 
 The sampler synth has two separate envelopes - one for amplitude and one for the cutoff value for a resonant low pass filter. These work very similar to the standard synth envelopes except for two major differences. Firstly, the envelope times do not stretch or shrink to match the BPM. Secondly, the sustain time by default stretches to make the envelope fit the length of the sample. This is explained in detail in the tutorial.
 
-Check out the `use_sample_pack` and `use_sample_pack_as` fns for details on making it easy to work with a whole folder of your own sample files. Note, that on the first trigger of a sample, Sonic Pi has to load the sample which takes some time and may cause timing issues. To preload the samples you wish to work with consider using `load_sample` or `load_samples`.",
+Check out the `use_sample_pack` for details on making it easy to work with a whole folder of your own sample files. Note, that on the first trigger of a sample, Sonic Pi has to load the sample which takes some time and may cause timing issues. To preload the samples you wish to work with consider using `load_sample` or `load_samples`.",
           args:          [[:name_or_path, :symbol_or_string]],
           opts:          {:rate          => "Rate with which to play back the sample. Higher rates mean an increase in pitch and a decrease in duration. Default is 1.",
                           :beat_stretch  => "Stretch (or shrink) the sample to last for exactly the specified number of beats. Please note - this does *not* keep the pitch constant and is essentially the same as modifying the rate directly.",
@@ -2484,30 +2806,55 @@ Check out the `use_sample_pack` and `use_sample_pack_as` fns for details on maki
                           :finish        => "Position in sample as a fraction between 0 and 1 to end playback. Default is 1.",
                           :pan           => "Stereo position of audio. -1 is left ear only, 1 is right ear only, and values in between position the sound accordingly. Default is 0",
                           :amp           => "Amplitude of playback",
-                          :norm          => "Normalise the audio (make quieter parts of the sample louder and louder parts quieter) - this is similar to the normaliser FX. This may emphasise any clicks caused by clipping.",
-                          :cutoff               => "Cutoff value of the built-in resonant low pass filter (rlpf) in MIDI notes. Unless specified, the rlpf is *not* added to the signal chain.",
-                          :cutoff_attack_level  => "The peak cutoff (value of cutoff at peak of attack) as a MIDI note. Default value is 130.",
-                          :cutoff_decay_level   => "The level of cutoff after the decay phase as a MIDI note. Default value is `:cutoff_attack_level`.",
-                          :cutoff_sustain_level => "The sustain cutoff (value of cutoff at sustain time) as a MIDI note. Default value is `:cutoff_decay_level`.",
-                          :cutoff_attack        => "Attack time for cutoff filter. Amount of time (in beats) for sound to reach full cutoff value. Default value is set to match amp envelope's attack value.",
-                          :cutoff_decay         => "Decay time for cutoff filter. Amount of time (in beats) for sound to move from full cutoff value (cutoff attack level) to the cutoff sustain level. Default value is set to match amp envelope's decay value.",
-                          :cutoff_sustain       =>  "Amount of time for cutoff value to remain at sustain level in beats. When -1 (the default) will auto-stretch.",
-                          :cutoff_release       => "Amount of time (in beats) for sound to move from cutoff sustain value to cutoff min value. Default value is set to match amp envelope's release value.",
-                          :cutoff_env_curve     => "Select the shape of the curve between levels in the cutoff envelope. 1=linear, 2=exponential, 3=sine, 4=welch, 6=squared, 7=cubed",
-                          :res           => "Cutoff-specific opt. Only honoured if cutoff: is specified. Filter resonance as a value between 0 and 1. Large amounts of resonance (a res: near 1) can create a whistling sound around the cutoff frequency. Smaller values produce less resonance.",
-                          :rpitch        => "Rate modified pitch. Multiplies the rate by the appropriate ratio to shift up or down the specified amount in MIDI notes. Please note - this does *not* keep the duration and rhythmical rate constant and ie essentially the same as modifying the rate directly.",
+                          :pre_amp           => "Amplitude multiplier which takes place immediately before any internal FX such as the low pass filter, compressor or pitch modification. Use this opt if you want to overload the compressor.",
+                          :norm              => "Normalise the audio (make quieter parts of the sample louder and louder parts quieter) - this is similar to the normaliser FX. This may emphasise any clicks caused by clipping.",
+                          :lpf               => "Cutoff value of the built-in low pass filter (lpf) in MIDI notes. Unless specified, the lpf is *not* added to the signal chain.",
+                          :lpf_attack_level  => "The peak lpf cutoff (value of cutoff at peak of attack) as a MIDI note. Default value is 130.",
+                          :lpf_decay_level   => "The level of lpf cutoff after the decay phase as a MIDI note. Default value is `:lpf_attack_level`.",
+                          :lpf_sustain_level => "The sustain cutoff (value of lpf cutoff at sustain time) as a MIDI note. Default value is `:lpf_decay_level`.",
+                          :lpf_attack        => "Attack time for lpf cutoff filter. Amount of time (in beats) for sound to reach full cutoff value. Default value is set to match amp envelope's attack value.",
+                          :lpf_decay         => "Decay time for lpf cutoff filter. Amount of time (in beats) for sound to move from full cutoff value (cutoff attack level) to the cutoff sustain level. Default value is set to match amp envelope's decay value.",
+                          :lpf_sustain       =>  "Amount of time for lpf cutoff value to remain at sustain level in beats. When -1 (the default) will auto-stretch.",
+                          :lpf_release       => "Amount of time (in beats) for sound to move from lpf cutoff sustain value to lpf cutoff min value. Default value is set to match amp envelope's release value.",
+                          :lpf_min           => "Starting value of the lpf cutoff envelope. Default is 30.",
+                          :lpf_env_curve     => "Select the shape of the curve between levels in the lpf cutoff envelope. 1=linear, 2=exponential, 3=sine, 4=welch, 6=squared, 7=cubed",
+                          :hpf               => "Cutoff value of the built-in high pass filter (hpf) in MIDI notes. Unless specified, the hpf is *not* added to the signal chain.",
+                          :hpf_attack_level  => "The peak hpf cutoff (value of cutoff at peak of attack) as a MIDI note. Default value is 130.",
+                          :hpf_decay_level   => "The level of hpf cutoff after the decay phase as a MIDI note. Default value is `:hpf_attack_level`.",
+                          :hpf_sustain_level => "The sustain cutoff (value of hpf cutoff at sustain time) as a MIDI note. Default value is `:hpf_decay_level`.",
+                          :hpf_attack        => "Attack time for hpf cutoff filter. Amount of time (in beats) for sound to reach full cutoff value. Default value is set to match amp envelope's attack value.",
+                          :hpf_decay         => "Decay time for hpf cutoff filter. Amount of time (in beats) for sound to move from full cutoff value (cutoff attack level) to the cutoff sustain level. Default value is set to match amp envelope's decay value.",
+                          :hpf_sustain       =>  "Amount of time for hpf cutoff value to remain at sustain level in beats. When -1 (the default) will auto-stretch.",
+                          :hpf_release       => "Amount of time (in beats) for sound to move from hpf cutoff sustain value to hpf cutoff min value. Default value is set to match amp envelope's release value.",
+                          :hpf_env_curve     => "Select the shape of the curve between levels in the hpf cutoff envelope. 1=linear, 2=exponential, 3=sine, 4=welch, 6=squared, 7=cubed",
+                          :hpf_max           => "Starting value of the hpf cutoff envelope. Default is 50",
+                          :rpitch        => "Rate modified pitch. Multiplies the rate by the appropriate ratio to shift up or down the specified amount in MIDI notes. Please note - this does *not* keep the duration and rhythmical rate constant and is essentially the same as modifying the rate directly.",
                           :pitch         => "Pitch adjustment in semitones. 1 is up a semitone, 12 is up an octave, -12 is down an octave etc. Maximum upper limit of 24 (up 2 octaves). Lower limit of -72 (down 6 octaves). Decimal numbers can be used for fine tuning.",
                           :window_size   => "Pitch shift-specific opt - only honoured if the pitch: opt is used. Pitch shift works by chopping the input into tiny slices, then playing these slices at a higher or lower rate. If we make the slices small enough and overlap them, it sounds like the original sound with the pitch changed. The window_size is the length of the slices and is measured in seconds. It needs to be around 0.2 (200ms) or greater for pitched sounds like guitar or bass, and needs to be around 0.02 (20ms) or lower for percussive sounds like drum loops. You can experiment with this to get the best sound for your input.",
                           :pitch_dis     => "Pitch shift-specific opt - only honoured if the pitch: opt is used. Pitch dispersion - how much random variation in pitch to add. Using a low value like 0.001 can help to \"soften up\" the metallic sounds, especially on drum loops. To be really technical, pitch_dispersion is the maximum random deviation of the pitch from the pitch ratio (which is set by the pitch param)",
                           :time_dis      => "Pitch shift-specific opt - only honoured if the pitch: opt is used. Time dispersion - how much random delay before playing each grain (measured in seconds). Again, low values here like 0.001 can help to soften up metallic sounds introduced by the effect. Large values are also fun as they can make soundscapes and textures from the input, although you will most likely lose the rhythm of the original. NB - This won't have an effect if it's larger than window_size.",
-                          :slide         => "Default slide time in beats for all slide opts. Individually specified slide opts will override this value" },
+
+
+                          :compress => "Enable the compressor. This sits at the end of the internal FX chain immediately before the `amp:` opt. Therefore to drive the compressor use the `pre_amp:` opt which will amplify the signal before it hits any internal FX. The compressor compresses the dynamic range of the incoming signal. Equivalent to automatically turning the amp down when the signal gets too loud and then back up again when it's quiet. Useful for ensuring the containing signal doesn't overwhelm other aspects of the sound. Also a general purpose hard-knee dynamic range processor which can be tuned via the opts to both expand and compress the signal.",
+
+                          :threshold => "Threshold value determining the break point between slope_below and slope_above. Only valid if the compressor is enabled by turning on the compress: opt.",
+
+                          :slope_below => "Slope of the amplitude curve below the threshold. A value of 1 means that the output of signals with amplitude below the threshold will be unaffected. Greater values will magnify and smaller values will attenuate the signal. Only valid if the compressor is enabled by turning on the compress: opt.",
+                          :slope_above => "Slope of the amplitude curve above the threshold. A value of 1 means that the output of signals with amplitude above the threshold will be unaffected. Greater values will magnify and smaller values will attenuate the signal. Only valid if the compressor is enabled by turning on the compress: opt.",
+
+                          :clamp_time => "Time taken for the amplitude adjustments to kick in fully (in seconds). This is usually pretty small (not much more than 10 milliseconds). Also known as the time of the attack phase. Only valid if the compressor is enabled by turning on the compress: opt.",
+
+                          :relax_time => "Time taken for the amplitude adjustments to be released. Usually a little longer than clamp_time. If both times are too short, you can get some (possibly unwanted) artefacts. Also known as the time of the release phase. Only valid if the compressor is enabled by turning on the compress: opt.",
+
+
+                          :slide      => "Default slide time in beats for all slide opts. Individually specified slide opts will override this value" },
           accepts_block: false,
           intro_fn:       true,
 
 
           examples:      ["
 sample :perc_bell # plays one of Sonic Pi's built in samples",
-        "sample '/home/yourname/path/to/a/sample.wav' # plays a wav|wave|aif|aiff file from your local filesystem",
+        "sample '/home/yourname/path/to/a/sample.wav' # plays a wav|wave|aif|aiff|flac file from your local filesystem",
         "# Let's play with the rate parameter
 # play one of the included samples
 sample :loop_amen
@@ -2617,7 +2964,7 @@ puts status # Returns something similar to:
         when Proc
           return note(n.call, *args)
         when Hash
-          return note(n[:note], *args)
+          raise "Unable to create a note from the Map: #{n.inspect}"
         end
 
         return Note.resolve_midi_note_without_octave(n) if args.empty?
@@ -2739,7 +3086,18 @@ play degree(2, :C3, :minor)
 
 
 
-      def scale(tonic, name, *opts)
+      def scale(tonic_or_name, *opts)
+        tonic = 0
+        name = :minor
+        if opts.size == 0
+          name = tonic_or_name
+        elsif (opts.size == 1) && opts[0].is_a?(Hash)
+          name = tonic_or_name
+        else
+          tonic = tonic_or_name
+          name = opts.shift
+        end
+
         opts = resolve_synth_opts_hash_or_array(opts)
         opts = {:num_octaves => 1}.merge(opts)
         Scale.new(tonic, name,  opts[:num_octaves]).ring
@@ -2750,7 +3108,7 @@ play degree(2, :C3, :minor)
           doc:           "Creates a ring of MIDI note numbers when given a tonic note and a scale type. Also takes an optional `num_octaves:` parameter (octave `1` is the default)",
           args:          [[:tonic, :symbol], [:name, :symbol]],
           returns:        :ring,
-          opts:          {:num_octaves => "The number of octaves you'd like the scale to consist of. More octaves means a larger scale. Default is 1."},
+          opts:          {:num_octaves => "The number of octaves you'd like the scale to consist of. More octaves means a larger scale. Default is 1. If only passed the scale name, the tonic defaults to 0. See examples."},
           accepts_block: false,
           intro_fn:       true,
           examples:      ["
@@ -2762,7 +3120,7 @@ play_pattern(:C, :major, num_octaves: 2)",
         "# Scales can start with any note:
 puts (scale 50, :minor) #=> (ring 50, 52, 53, 55, 57, 58, 60, 62)
 puts (scale 50.1, :minor) #=> (ring 50.1, 52.1, 53.1, 55.1, 57.1, 58.1, 60.1, 62.1)
-puts (scale 0, :minor) #=> (ring 0, 2, 3, 5, 7, 8, 10, 12)",
+puts (scale :minor) #=> (ring 0, 2, 3, 5, 7, 8, 10, 12)",
 
 
 " # scales are also rings
@@ -2882,7 +3240,18 @@ end",
 
 
 
-      def chord(tonic, name=:major, *opts)
+      def chord(tonic_or_name, *opts)
+        tonic = 0
+        name = :minor
+        if opts.size == 0
+          name = tonic_or_name
+        elsif (opts.size == 1) && opts[0].is_a?(Hash)
+          name = tonic_or_name
+        else
+          tonic = tonic_or_name
+          name = opts.shift
+        end
+
         return [] unless tonic
         opts = resolve_synth_opts_hash_or_array(opts)
         c = []
@@ -2898,7 +3267,7 @@ end",
       doc name:          :chord,
           introduced:    Version.new(2,0,0),
           summary:       "Create chord",
-          doc:           "Creates an immutable ring of Midi note numbers when given a tonic note and a chord type",
+          doc:           "Creates an immutable ring of Midi note numbers when given a tonic note and a chord type. If only passed a chord type, will default the tonic to 0. See examples.",
           args:          [[:tonic, :symbol], [:name, :symbol]],
           returns:        :ring,
           opts:          {invert: "Apply the specified num inversions to chord. See the fn `chord_invert`.",
@@ -2916,6 +3285,9 @@ play (chord :e3, :minor, invert: 0) # Play the basic :e3, :minor chord - (ring 5
 play (chord :e3, :minor, invert: 1) # Play the first inversion of :e3, :minor - (ring 55, 59, 64)
 play (chord :e3, :minor, invert: 2) # Play the first inversion of :e3, :minor - (ring 59, 64, 67)
 ",
+
+"# You can create a chord without a tonic:
+puts (chord :minor) #=> (ring 0, 3, 7)",
 
 "# chords are great for arpeggiators
 live_loop :arp do
@@ -3022,11 +3394,12 @@ play (chord_invert (chord :A3, \"M\"), 2) #Second inversion - (ring 64, 69, 73)
 
 
       def control(node, *args)
-        ensure_good_timing!
-        return nil if node.nil?
 
+        return nil if node.nil?
+        raise "You may only control a SynthNode. You tried to control a #{node.class}: #{node.inspect}" unless node.is_a?(Node)
         args_h = resolve_synth_opts_hash_or_array(args)
 
+        return nil unless should_trigger?(args_h)
         # set default slide times
         default_slide_time = args_h[:slide]
         args_h.delete :slide
@@ -3059,6 +3432,11 @@ play (chord_invert (chord :A3, \"M\"), 2) #Second inversion - (ring 64, 69, 73)
           info.ctl_validate!(args_h) if info
         end
 
+        unless in_good_time?
+          __delayed_message "!! Out of time, skipping: control node #{node.id}, #{arg_h_pp(args_h)}"
+          return node
+        end
+
         node.control args_h
 
         unless Thread.current.thread_variable_get(:sonic_pi_mod_sound_synth_silent)
@@ -3069,7 +3447,7 @@ play (chord_invert (chord :A3, \"M\"), 2) #Second inversion - (ring 64, 69, 73)
       doc name:          :control,
           introduced:    Version.new(2,0,0),
           summary:       "Control running synth",
-          doc:           "Control a running synth node by passing new parameters to it. A synth node represents a running synth and can be obtained by assigning the return value of a call to play or sample or by specifying a parameter to the do/end block of an FX. You may modify any of the parameters you can set when triggering the synth, sample or FX. See documentation for opt details. If the synth to control is a chord, then control will change all the notes of that chord group at once to a new target set of notes - see example. ",
+          doc:           "Control a running synth node by passing new parameters to it. A synth node represents a running synth and can be obtained by assigning the return value of a call to play or sample or by specifying a parameter to the do/end block of an FX. You may modify any of the parameters you can set when triggering the synth, sample or FX. See documentation for opt details. If the synth to control is a chord, then control will change all the notes of that chord group at once to a new target set of notes - see example. Also, you may use the on: opt to conditionally trigger the control - see the docs for the `synth` and `sample` fns for more information.",
           args:          [[:node, :synth_node]],
           opts:          {},
           accepts_block: false,
@@ -3154,7 +3532,7 @@ control cg, notes: (chord :e3, :m13)                     # slide to new chord wi
 
 
       def kill(node)
-        ensure_good_timing!
+        in_good_time?
         return nil if node.nil?
 
         alive = node.live?
@@ -3187,13 +3565,14 @@ kill bar"]
 
 
       def sample_names(group)
-        Synths::BaseInfo.grouped_samples[group][:samples]
+        Synths::BaseInfo.grouped_samples[group][:samples].ring
       end
       doc name:          :sample_names,
           introduced:    Version.new(2,0,0),
           summary:       "Get sample names",
-          doc:           "Return a list of sample names for the specified group",
+          doc:           "Return a ring of sample names for the specified group",
           args:          [[:group, :symbol]],
+          returns:        :ring,
           opts:          nil,
           accepts_block: false,
           examples:      []
@@ -3202,7 +3581,7 @@ kill bar"]
 
 
       def all_sample_names
-        Synths::BaseInfo.all_samples
+        Synths::BaseInfo.all_samples.ring
       end
       doc name:          :all_sample_names,
           introduced:    Version.new(2,0,0),
@@ -3217,7 +3596,7 @@ kill bar"]
 
 
       def sample_groups
-        Synths::BaseInfo.grouped_samples.keys
+        Synths::BaseInfo.grouped_samples.keys.ring
       end
       doc name:          :sample_groups,
           introduced:    Version.new(2,0,0),
@@ -3232,7 +3611,7 @@ kill bar"]
 
 
       def synth_names
-        Synths::BaseInfo.all_synths
+        Synths::BaseInfo.all_synths.ring
       end
       doc name:          :synth_names,
           introduced:    Version.new(2,9,0),
@@ -3267,12 +3646,10 @@ If you wish your synth to work with Sonic Pi's automatic stereo sound infrastruc
              {|freq = 200, amp = 1, out_bus = 0 |
                Out.ar(out_bus,
                       SinOsc.ar([freq,freq],0,0.5)* Line.kr(1, 0, 5, amp, doneAction: 2))}
-    ).store;
+    ).writeDefFile(\"/Users/sam/Desktop/\")
     )
 
-The location of the binary synthdef file written to disk by `.store` is platform dependent. In SuperCollider, run `Platform.userAppSupportDir` to find out where this directory exists on your machine and then navigate to the `synthdefs` folder. For example, on my Mac this dir is:
 
-    /Users/sam/Library/Application Support/SuperCollider/synthdefs
     ",
       args:          [[:path, :string]],
       opts:          nil,
@@ -3321,7 +3698,7 @@ The location of the binary synthdef file written to disk by `.store` is platform
             when FalseClass
               args_h[k] = 0.0
             when NilClass
-              args_h[k] = 0.0
+              args_h[k] = nil
             else
               begin
                 args_h[k] = res.to_f
@@ -3338,7 +3715,7 @@ The location of the binary synthdef file written to disk by `.store` is platform
           when FalseClass
             args_h[k] = 0.0
           when NilClass
-            args_h[k] = 0.0
+            args_h[k] = nil
           else
             begin
               args_h[k] = v.to_f
@@ -3351,7 +3728,7 @@ The location of the binary synthdef file written to disk by `.store` is platform
       end
 
       def find_sample_with_path(path)
-        ["wav", "aiff", "aif", "wave"].each do |ext|
+        ["wav", "wave", "aif", "aiff", "flac"].each do |ext|
           full = "#{path}.#{ext}"
           return full if File.exists?(full)
         end
@@ -3369,31 +3746,6 @@ The location of the binary synthdef file written to disk by `.store` is platform
         res
       end
 
-      def resolve_sample_symbol_path(sym)
-        aliases = Thread.current.thread_variable_get(:sonic_pi_mod_sound_sample_aliases)
-        path = Thread.current.thread_variable_get(:sonic_pi_mod_sound_sample_path)
-
-        return fetch_or_cache_sample_path(sym) unless (aliases || path)
-
-        if (aliases &&
-            (m       = sym.to_s.match /\A(.+?)__(.+)/) &&
-            (p       = aliases[m[1]]))
-          path = p
-          sym = m[2]
-          partial = "#{p}#{sym}"
-        elsif path
-          partial = path + sym.to_s
-        else
-          path = samples_path
-          partial = path + "/" + sym.to_s
-        end
-
-        res = find_sample_with_path(partial)
-
-        raise "No sample exists called #{sym.inspect} in sample pack #{path.inspect} (#{File.expand_path(path)})" unless res
-
-        res
-      end
 
       def complex_sampler_args?(args_h)
         # break out early if any of the 'complex' keys exist in the
@@ -3403,51 +3755,66 @@ The location of the binary synthdef file written to disk by `.store` is platform
       end
 
 
-      def trigger_sampler(path, buf_id, num_chans, args_h, group=current_job_synth_group)
+      def resolve_specific_sampler(num_chans, args_h)
         if complex_sampler_args?(args_h)
           #complex
-          synth_name = (num_chans == 1) ? :mono_player : :stereo_player
+          (num_chans == 1) ? :mono_player : :stereo_player
         else
           #basic
-          synth_name = (num_chans == 1) ? :basic_mono_player : :basic_stereo_player
+          (num_chans == 1) ? :basic_mono_player : :basic_stereo_player
         end
-
-        trigger_specific_sampler(synth_name, path, buf_id, num_chans, args_h, group)
       end
 
-      def trigger_specific_sampler(sampler_type, path, buf_id, num_chans, args_h, group=current_job_synth_group)
-
-        sn = sampler_type.to_sym
-        info = Synths::SynthInfo.get_info(sn)
-        path = path.gsub(/\A#{@mod_sound_home_dir}/, "~") if path.is_a? String
-
-        # Combine thread local defaults here as
-        # normalise_and_resolve_synth_args has only been taught about
-        # synth thread local defaults
-        t_l_args = Thread.current.thread_variable_get(:sonic_pi_mod_sound_sample_defaults) || {}
-        t_l_args.each do |k, v|
-            args_h[k] = v unless args_h.has_key? k
-          end
-        args_h = normalise_and_resolve_synth_args(args_h, info)
-
-
-        unless Thread.current.thread_variable_get(:sonic_pi_mod_sound_synth_silent)
-          if args_h.empty?
-            __delayed_message "sample #{path.inspect}"
+      def trigger_sampler(path, args_h, info, group=current_job_synth_group)
+        case path
+        when Buffer
+          buf_info = path
+          if buf_info.path
+            path = buf_info.path
           else
-            __delayed_message "sample #{path.inspect}, #{arg_h_pp(args_h)}"
+            path = path[0]
           end
+        else
+          buf_info = load_sample_at_path(path)
         end
-        add_arg_slide_times!(args_h, info)
-        args_h[:buf] = buf_id
-        trigger_synth(sn, args_h, group, info)
+
+        sn = resolve_specific_sampler(buf_info.num_chans, args_h)
+        buf_id = buf_info.id
+
+        unless in_good_time?
+          if args_h.empty?
+            __delayed_message "!! Out of time, skipping: sample #{path.inspect}"
+          else
+            __delayed_message "!! Out of time, skipping: sample #{path.inspect}, #{arg_h_pp(args_h)}"
+          end
+          return @blank_node
+        else
+
+          unless Thread.current.thread_variable_get(:sonic_pi_mod_sound_synth_silent)
+            if args_h.empty?
+              __delayed_message "sample #{path.inspect}"
+            else
+              __delayed_message "sample #{path.inspect}, #{arg_h_pp(args_h)}"
+            end
+          end
+          add_arg_slide_times!(args_h, info)
+          args_h[:buf] = buf_id
+          return trigger_synth(sn, args_h, group, info)
+        end
       end
 
       def trigger_inst(synth_name, args_h, group=current_job_synth_group)
         sn = synth_name.to_sym
         info = Synths::SynthInfo.get_info(sn)
 
-        processed_args = normalise_and_resolve_synth_args(args_h, info, nil, true)
+        processed_args = normalise_and_resolve_synth_args(args_h, info, true)
+
+
+        unless in_good_time?
+          __delayed_message "!! Out of time, skipping: synth #{synth_name.inspect}, #{arg_h_pp(processed_args)}"
+
+          return @blank_node
+        end
 
         unless Thread.current.thread_variable_get(:sonic_pi_mod_sound_synth_silent)
           __delayed_message "synth #{synth_name.inspect}, #{arg_h_pp(processed_args)}"
@@ -3461,10 +3828,15 @@ The location of the binary synthdef file written to disk by `.store` is platform
         sn = synth_name.to_sym
         info = Synths::SynthInfo.get_info(sn)
         args_h = resolve_synth_opts_hash_or_array(args_a_or_h)
-        args_h = normalise_and_resolve_synth_args(args_h, info, nil, true)
+        args_h = normalise_and_resolve_synth_args(args_h, info, true)
 
         chord_group = @mod_sound_studio.new_group(:tail, group, "CHORD")
         cg = ChordGroup.new(chord_group, notes, info)
+
+        unless in_good_time?
+          __delayed_message "!! Out of time, skipping: synth #{sn.inspect}, #{arg_h_pp({note: notes}.merge(args_h))}"
+          return @blank_node
+        end
 
         unless Thread.current.thread_variable_get(:sonic_pi_mod_sound_synth_silent)
           __delayed_message "synth #{sn.inspect}, #{arg_h_pp({note: notes}.merge(args_h))}"
@@ -3487,8 +3859,7 @@ The location of the binary synthdef file written to disk by `.store` is platform
       end
 
       def trigger_fx(synth_name, args_h, info, in_bus, group=current_fx_group, now=false, t_minus_delta=false)
-
-        args_h = normalise_and_resolve_synth_args(args_h, info, nil, true)
+        args_h = normalise_and_resolve_synth_args(args_h, info, false)
         add_arg_slide_times!(args_h, info)
         out_bus = current_out_bus
         n = trigger_synth(synth_name, args_h, group, info, now, out_bus, t_minus_delta)
@@ -3497,10 +3868,18 @@ The location of the binary synthdef file written to disk by `.store` is platform
 
       # Function that actually triggers synths now that all args are resolved
       def trigger_synth(synth_name, args_h, group, info, now=false, out_bus=nil, t_minus_delta=false)
+
+
+
         add_out_bus_and_rand_buf!(args_h, out_bus)
         orig_synth_name = synth_name
         synth_name = info ? info.scsynth_name : synth_name
+
+        args_h = info.munge_opts(args_h) if info
         validate_if_necessary! info, args_h
+
+        ensure_good_timing!
+
         job_id = current_job_id
         __no_kill_block do
 
@@ -3534,12 +3913,55 @@ The location of the binary synthdef file written to disk by `.store` is platform
       end
 
 
-      def normalise_and_resolve_synth_args(args_h, info, out_bus=nil, combine_tls=false)
+      def normalise_and_resolve_sample_args(path, args_h, info, combine_tls=false)
+        purge_nil_vals!(args_h)
+
+        defaults = info ? info.arg_defaults : {}
+        t_l_args = Thread.current.thread_variable_get(:sonic_pi_mod_sound_sample_defaults) || {}
+        t_l_args.each do |k, v|
+          args_h[k] = v unless args_h.has_key? k || v.nil?
+        end
+
+        stretch_duration = args_h[:beat_stretch]
+        if stretch_duration
+          raise "beat_stretch: opt needs to be a positive number. Got: #{stretch_duration.inspect}" unless stretch_duration.is_a?(Numeric) && stretch_duration > 0
+          stretch_duration = stretch_duration.to_f
+          rate = args_h[:rate] || 1
+          dur = sample_buffer(path).duration
+          args_h[:rate] = (1.0 / stretch_duration) * rate * (current_bpm / (60.0 / dur))
+        end
+
+        pitch_stretch_duration = args_h[:pitch_stretch]
+        if pitch_stretch_duration
+          raise "pitch_stretch: opt needs to be a positive number. Got: #{pitch_stretch_duration.inspect}" unless pitch_stretch_duration.is_a?(Numeric) && pitch_stretch_duration > 0
+          pitch_stretch_duration = pitch_stretch_duration.to_f
+          rate = args_h[:rate] || 1
+          dur = sample_buffer(path).duration
+          new_rate = (1.0 / pitch_stretch_duration) * (current_bpm / (60.0 / dur))
+          pitch_shift = ratio_to_pitch(new_rate)
+          args_h[:rate] = new_rate * rate
+          args_h[:pitch] = args_h[:pitch].to_f - pitch_shift
+        end
+
+        rate_pitch = args_h[:rpitch]
+        if rate_pitch
+          new_rate = pitch_to_ratio(rate_pitch.to_f)
+          args_h[:rate] = new_rate * (args_h[:rate] || 1)
+        end
+        resolve_midi_args!(args_h, info) if info
+        normalise_args!(args_h, defaults)
+        scale_time_args_to_bpm!(args_h, info, true) if info && Thread.current.thread_variable_get(:sonic_pi_spider_arg_bpm_scaling)
+        args_h
+      end
+
+
+      def normalise_and_resolve_synth_args(args_h, info, combine_tls=false)
+        purge_nil_vals!(args_h)
         defaults = info ? info.arg_defaults : {}
         if combine_tls
           t_l_args = Thread.current.thread_variable_get(:sonic_pi_mod_sound_synth_defaults) || {}
           t_l_args.each do |k, v|
-            args_h[k] = v unless args_h.has_key? k
+            args_h[k] = v unless args_h.has_key? k || v.nil?
           end
         end
 
@@ -3792,10 +4214,29 @@ The location of the binary synthdef file written to disk by `.store` is platform
 
       def ensure_good_timing!
         return true if Thread.current.thread_variable_get(:sonic_pi_mod_sound_disable_timing_warnings)
+        raise "Timing Exception: thread got too far behind time." if time_diff > 1.1
+      end
 
+      def time_diff
+        # negative values mean we're ahead of time
+        # positive values mean we're behind time
         vt  = Thread.current.thread_variable_get :sonic_pi_spider_time
-        sat = @mod_sound_studio.sched_ahead_time + 1.1
-        raise "Timing Exception: thread got too far behind time." if (Time.now - sat) > vt
+        sat = @mod_sound_studio.sched_ahead_time
+        compensated = (Time.now - sat)
+        compensated - vt
+      end
+
+      def in_good_time?(error_window=0)
+        diff = time_diff
+        if diff < 0
+          return true
+        else
+          if diff < 1.1
+            return false
+          else
+            raise "Timing Exception: thread got too far behind time."
+          end
+        end
       end
 
       def current_synth_name
@@ -3915,12 +4356,27 @@ The location of the binary synthdef file written to disk by `.store` is platform
           n += shift
         end
 
+        if octave_shift = Thread.current.thread_variable_get(:sonic_pi_mod_sound_octave_shift)
+          n += (12 * octave_shift)
+        end
+
+        if cent_shift = Thread.current.thread_variable_get(:sonic_pi_mod_sound_cent_tuning)
+          n += (cent_shift / 100.0)
+        end
+
+        if @mod_sound_studio
+          n += (@mod_sound_studio.cent_tuning / 100.0)
+        end
+
         n += args_h[:pitch].to_f
 
         n = normalise_tuning(n)
         return n
       end
 
+      def sample_find_candidates(*args)
+        @sample_loader.find_candidates(*args)
+      end
 
       def __freesound(id, *opts)
         path = __freesound_path(id)
@@ -3955,6 +4411,8 @@ The location of the binary synthdef file written to disk by `.store` is platform
       # end
       # "
       # ]
+
+
     end
   end
 end

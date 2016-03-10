@@ -4,7 +4,7 @@
 # Full project source: https://github.com/samaaron/sonic-pi
 # License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 #
-# Copyright 2013, 2014, 2015 by Sam Aaron (http://sam.aaron.name).
+# Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 # All rights reserved.
 #
 # Permission is granted for use, copying, modification, and
@@ -17,6 +17,8 @@ raise "Sonic Pi requires Ruby 1.9.3+ to be installed. You are using version #{RU
 ## This core file sets up the load path and applies any necessary monkeypatches.
 
 ## Ensure native lib dir is available
+require 'rbconfig'
+ruby_api = RbConfig::CONFIG['ruby_version']
 os = case RUBY_PLATFORM
      when /.*arm.*-linux.*/
        :raspberry
@@ -29,7 +31,28 @@ os = case RUBY_PLATFORM
      else
        RUBY_PLATFORM
      end
-$:.unshift "#{File.expand_path("../rb-native", __FILE__)}/#{os}/#{RUBY_VERSION}p#{RUBY_PATCHLEVEL}/"
+ruby_gem_native_path = "#{File.expand_path("../rb-native", __FILE__)}"
+ruby_gem_api_path = "#{ruby_gem_native_path}/#{os}/#{ruby_api}"
+
+unless File.directory?(ruby_gem_api_path)
+  STDERR.puts "*** COULD NOT FIND RUBY GEMS REQUIRED BY SONIC PI ***"
+  STDERR.puts "Directory '#{ruby_gem_api_path}' not found."
+  STDERR.puts "Your ruby interpreter is '#{RbConfig.ruby}', supporting ruby api #{ruby_api}."
+  Dir.entries("#{ruby_gem_native_path}/#{os}/")
+    .select { |d| (File.directory?("#{ruby_gem_native_path}/#{os}/#{d}") && d != '.' && d != '..') }
+    .each do |installed_ruby_api|
+      STDERR.puts "The Sonic Pi on your computer was installed for ruby api #{installed_ruby_api}."
+    end
+  STDERR.puts "Please refer to the Sonic Pi install instructions."
+  STDERR.puts "For installation, you need to run 'app/server/bin/compile-extensions.rb'."
+  STDERR.puts "If you change or upgrade your ruby interpreter later, you may need to run it again."
+
+  raise "Could not access ruby gem directory"
+end
+
+$:.unshift ruby_gem_api_path
+
+require 'win32/process' if os == :windows
 
 ## Ensure all libs in vendor directory are available
 Dir["#{File.expand_path("../vendor", __FILE__)}/*/lib/"].each do |vendor_lib|
@@ -39,7 +62,7 @@ end
 begin
   require 'did_you_mean'
 rescue LoadError
-  warn "Could not load did_you_mean"
+  warn "Non-critical error: Could not load did_you_mean"
 end
 
 require 'hamster/vector'
@@ -48,8 +71,13 @@ require 'wavefile'
 module SonicPi
   module Core
     module SPRand
+      # use FHS directory scheme:
+      # check if Sonic Pi's ruby server is not running inside the
+      # user's home directory, but is installed in /usr/lib/sonic-pi
+      # on Linux from a distribution's package
+      random_numbers_path = File.dirname(__FILE__).start_with?("/usr/lib/sonic-pi") ? "/usr/share/sonic-pi" : "../../../etc"
       # Read in same random numbers as server for random stream sync
-      @@random_numbers = ::WaveFile::Reader.new(File.expand_path("../../../etc/buffers/rand-stream.wav", __FILE__), ::WaveFile::Format.new(:mono, :float, 44100)).read(441000).samples.freeze
+      @@random_numbers = ::WaveFile::Reader.new(File.expand_path("#{random_numbers_path}/buffers/rand-stream.wav", __FILE__), ::WaveFile::Format.new(:mono, :float, 44100)).read(441000).samples.freeze
 
       def self.to_a
         @@random_numbers
@@ -87,6 +115,11 @@ module SonicPi
 
       def self.get_idx
         Thread.current.thread_variable_get(:sonic_pi_spider_random_gen_idx) || 0
+      end
+
+      def self.get_seed_plus_idx
+        (Thread.current.thread_variable_get(:sonic_pi_spider_random_gen_idx) || 0) +
+          Thread.current.thread_variable_get(:sonic_pi_spider_random_gen_seed) || 0
       end
 
       def self.rand!(max=1, idx=nil)
@@ -208,7 +241,6 @@ module SonicPi
     class SPVector < Hamster::Vector
       include TLMixin
       def initialize(list)
-        raise EmptyVectorError, "Cannot create an empty vector" if list.empty?
         super
       end
 
@@ -220,8 +252,36 @@ module SonicPi
         self.class.new(a)
       end
 
+      def list_diff(other)
+        ___sp_preserve_vec_kind(self.to_a - other.to_a)
+      end
+
+      def list_concat(other)
+        ___sp_preserve_vec_kind(self.to_a + other.to_a)
+      end
+
+      def -(other)
+        if other.is_a?(Array) || other.is_a?(SPVector)
+          return list_diff(other)
+        else
+          o = other.to_f
+          return self.map{|el| el - o}
+        end
+      end
+
+      def +(other)
+        if other.is_a?(Array) || other.is_a?(SPVector)
+          return list_concat(other)
+        else
+          o = other.to_f
+          return self.map{|el| el + o}
+        end
+      end
+
       def [](idx, len=(missing_length = true))
+        return nil unless idx
         raise InvalidIndexError, "Invalid index: #{idx.inspect}, was expecting a number or range" unless idx && (idx.is_a?(Numeric) || idx.is_a?(Range))
+        return nil if self.empty?
         if idx.is_a?(Numeric) && missing_length
           idx = map_index(idx)
           super idx
@@ -282,6 +342,45 @@ module SonicPi
         drop_last(1)
       end
 
+      def take(n)
+        return self.reverse.take(-n) if n <= 0
+        return super if n <= @size
+        self + take(n - @size)
+      end
+
+      def pick(n=nil, *opts)
+        # mangle args to extract nice behaviour
+        if !n.is_a?(Numeric) && opts.empty?
+          opts = n
+          n = nil
+        else
+          opts = opts[0]
+        end
+
+        if opts.is_a?(Hash)
+          s = opts[:skip]
+        else
+          s = nil
+        end
+
+        n = @size unless n
+        raise "pick requires n to be a number, got: #{n.inspect}" unless n.is_a? Numeric
+
+        res = []
+        if s
+          raise "skip: opt needs to be a number, got: #{s.inspect}" unless s.is_a? Numeric
+          n.times do
+            SonicPi::Core::SPRand.inc_idx!(s)
+            res << self.choose
+          end
+        else
+          n.times do
+            res << self.choose
+          end
+        end
+        res.ring
+      end
+
       def inspect
         a = self.to_a
         if a.empty?
@@ -303,6 +402,10 @@ module SonicPi
           end
         end
         ___sp_preserve_vec_kind(res)
+      end
+
+      def map_index(idx)
+        idx
       end
     end
 
@@ -442,6 +545,17 @@ class Array
 
   def choose
     self[SonicPi::Core::SPRand.rand_i!(self.size)]
+  end
+
+  def pick(n=nil)
+    n = @size unless n
+    raise "pick requires n to be a number, got: #{n.inspect}" unless n.is_a? Numeric
+
+    res = []
+    n.times do
+      res << self.choose
+    end
+    res
   end
 
   alias_method :__orig_sample__, :sample

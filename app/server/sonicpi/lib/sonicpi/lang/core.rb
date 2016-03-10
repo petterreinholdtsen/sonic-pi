@@ -4,7 +4,7 @@
 # Full project source: https://github.com/samaaron/sonic-pi
 # License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 #
-# Copyright 2013, 2014, 2015 by Sam Aaron (http://sam.aaron.name).
+# Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 # All rights reserved.
 #
 # Permission is granted for use, copying, modification, and
@@ -14,6 +14,7 @@
 require_relative 'support/docsystem'
 require_relative "../version"
 require_relative "../util"
+require 'active_support/inflector'
 
 ## TODO: create _* equivalents of all fns - for silent (i.e computation) versions
 
@@ -307,6 +308,58 @@ module SonicPi
 
 
 
+      def on(condition, &blk)
+        blk.call if truthy?(condition)
+      end
+      doc name:           :on,
+          introduced:     Version.new(2,10,0),
+          summary:        "Optionally evaluate block",
+          args:           [[:condition, :truthy]],
+          returns:        nil,
+          opts:           nil,
+          accepts_block:  false,
+          doc:            "Optionally evaluate the block depending on the truthiness of the supplied condition. The truthiness rules are as follows: all values are seen as true except for: false, nil and 0. Lambdas will be automatically called and the truthiness of their results used.",
+      examples:       [
+"
+on true do
+  play 70     #=> will play 70 as true is truthy
+end",
+"
+on 1 do
+  play 70     #=> will play 70 as 1 is truthy
+end",
+"
+on 0 do
+  play 70     #=> will *not* play 70 as 0 is not truthy
+end",
+"
+on false do
+  play 70     #=> will *not* play 70 as false is not truthy
+end",
+"
+on nil do
+  play 70     #=> will *not* play 70 as nil is not truthy
+end",
+"
+on lambda{true} do
+  play 70     #=> will play 70 as the lambda returns a truthy value
+end",
+"
+on lambda{false} do
+  play 70     #=> will *not* play 70 as the lambda does not return a truthy value
+end",
+"
+on lambda{[true, false].choose} do
+  play 70     #=> will maybe play 70 depending on the choice in the lambda
+end"
+
+
+
+      ]
+
+
+
+
       def bools(*args)
         args.map do |a|
           if (a == 0) || (not a)
@@ -587,25 +640,65 @@ module SonicPi
 
 
 
-      def octs(start, num_octs=1)
+      def halves(start, num_halves=1)
+        raise "Start value for halves needs to be a number, got: #{start.inspect}" unless start.is_a?(Numeric)
+        start = start.to_f
+        return doubles(start, num_halves * -1) if num_halves < 0
         a = []
-        num_octs.times do |i|
-          a << (note(start) + (12 * i))
+        val = start
+        num_halves.times do
+          a << val
+          val /= 2.0
         end
         a.ring
       end
-      doc name:           :octs,
-          introduced:     Version.new(2,8,0),
-          summary:        "Create a ring of octaves",
-          args:           [[:start, :note], [:num_octaves, :pos_int]],
+      doc name:           :halves,
+          introduced:     Version.new(2,10,0),
+          summary:        "Create a ring of successive halves",
+          args:           [[:start, :number], [:num_halves, :int]],
           returns:        :ring,
           opts:           nil,
           accepts_block:  false,
-          doc:            "Create a ring of successive octaves starting at `start` for `num_octaves`. ",
+          doc:            "Create a ring containing the results of successive halving of the `start` value. If `num_halves` is negative, will return a ring of `doubles`.",
           examples:       [
-        "(octs 60, 2)  #=> (ring 60, 72)",
-        "(octs :e3, 3) #=> (ring 52, 64, 76)"
-]
+        "(halves 60, 2)  #=> (ring 60, 30)",
+        "(halves 120, 3) #=> (ring 120, 60, 30)",
+        "(halves 120, 5) #=> (ring 120, 60, 30, 15, 7.5)",
+        "(halves 30, -5) #=> (ring 30, 60, 120, 240, 480)"
+      ]
+
+
+
+
+      def doubles(start, num_doubles=1)
+        raise "Start value for doubles needs to be a number, got: #{start.inspect}" unless start.is_a?(Numeric)
+        return halves(start, num_doubles * -1) if num_doubles < 0
+        start = start.to_f
+        a = []
+        val = start
+        num_doubles.times do
+          a << val
+          val *= 2.0
+        end
+        a.ring
+      end
+      doc name:           :doubles,
+          introduced:     Version.new(2,10,0),
+          summary:        "Create a ring of successive doubles",
+          args:           [[:start, :number], [:num_doubles, :int]],
+          returns:        :ring,
+          opts:           nil,
+          accepts_block:  false,
+          doc:            "Create a ring containing the results of successive doubling of the `start` value. If `num_doubles` is negative, will return a ring of `halves`.",
+          examples:       [
+        "(doubles 60, 2)  #=> (ring 60, 120)",
+        "(doubles 1.5, 3) #=> (ring 1.5, 3, 6)",
+        "(doubles 1.5, 5) #=> (ring 1.5, 3, 6, 12, 24)",
+        "(doubles 100, -4) #=> (ring 100, 50, 25, 12.5)"
+      ]
+
+
+
 
       def vector(*args)
         SonicPi::Core::SPVector.new(args)
@@ -697,6 +790,32 @@ module SonicPi
 
 
 
+      def pick(items, n=nil, *args)
+        items.pick(n, *args)
+      end
+      doc name:           :pick,
+          introduced:     Version.new(2,10,0),
+          summary:        "Randomly pick from list (with duplicates)",
+          args:           [[:list, :array], [:n, :number_or_nil]],
+          opts:           {:skip => "Number of rands to skip over with each sucessive pick"},
+          accepts_block:  false,
+          doc:            "Pick n elements from list or ring. Unlike shuffle, after each element has been picked, it is 'returned' to the list so it may be picked again. This means there may be duplicates in the result. If n is greater than the size of the ring/list then duplicates are guaranteed to be in the result.
+
+If `n` isn't supplied it defaults to the size of the list/ring.",
+         examples:       ["
+puts [1, 2, 3, 4, 5].pick(3) #=> [4, 4, 3]",
+"
+puts (ring 1, 2, 3, 4, 5).pick(3) #=> (ring 4, 4, 3)",
+
+"
+puts (ring 1, 2).pick(5) #=> (ring 2, 2, 1, 1, 1)",
+"
+puts (ring 1, 2, 3).pick #=> (ring 3, 3, 2)"
+      ]
+
+
+
+
       def inc(n)
         n + 1
       end
@@ -739,6 +858,8 @@ module SonicPi
         args_h = resolve_synth_opts_hash_or_array(args)
 
         sync_sym = args_h[:sync]
+
+        raise "livelock detection - live_loop cannot sync with itself - please choose another sync name for live_loop #{name.inspect}" if name == sync_sym
 
         delay = args_h[:delay]
         raise "live_loop's delay: opt must be a number, got #{delay.inspect}" if delay && !delay.is_a?(Numeric)
@@ -937,7 +1058,9 @@ puts slept #=> Returns false as there were no sleeps in the block"]
       doc name:           :at,
           introduced:     Version.new(2,1,0),
           summary:        "Asynchronous Time. Run a block at the given time(s)",
-          doc:            "Given a list of times, run the block once after waiting each given time. If passed an optional params list, will pass each param individually to each block call. If size of params list is smaller than the times list, the param values will act as rings (rotate through). If the block is given 1 arg, the times are fed through. If the block is given 2 args, both the times and the params are fed through. A third block arg will receive the index of the time.",
+          doc:            "Given a list of times, run the block once after waiting each given time. If passed an optional params list, will pass each param individually to each block call. If size of params list is smaller than the times list, the param values will act as rings (rotate through). If the block is given 1 arg, the times are fed through. If the block is given 2 args, both the times and the params are fed through. A third block arg will receive the index of the time.
+
+Note, all code within the block is executed in its own thread. Therefore despite inheriting all thread locals such as the random stream and ticks, modifications will be isolated to the block and will not affect external code.",
           args:           [[:times, :list],
                            [:params, :list]],
           opts:           nil,
@@ -945,6 +1068,11 @@ puts slept #=> Returns false as there were no sleeps in the block"]
           requires_block: true,
           async_block:    true,
           examples:       ["
+  at 4 do
+    sample :ambi_choir    # play sample after waiting for 4 beats
+  end
+  ",
+  "
   at [1, 2, 4] do  # plays a note after waiting 1 beat,
     play 75           # then after 1 more beat,
   end                 # then after 2 more beats (4 beats total)
@@ -979,7 +1107,31 @@ puts slept #=> Returns false as there were no sleeps in the block"]
   at [0, 0.5, 2], [:a, :b] do |t, b, idx|  #If you specify the block with 3 args, it will pass through the time, the param and the index
     puts [t, b, idx] #=> prints out [0, :a, 0], [0.5, :b, 1], then [2, :a, 2]
   end
-  "
+  ",
+  " # at does not consume & interfere with the outer random stream
+puts \"main: \", rand  # 0.75006103515625
+rand_back
+at 1 do         # the random stream inside the at block is separate and
+                # isolated from the outer stream.
+  puts \"at:\", rand # 0.9287109375
+  puts \"at:\", rand # 0.1043701171875
+end
+
+sleep 2
+puts \"main: \", rand # value is still 0.75006103515625
+",
+
+"
+            # Each block run within at has its own isolated random stream:
+at [1, 2] do
+            # first time round (after 1 beat) prints:
+  puts rand # 0.9287109375
+  puts rand # 0.1043701171875
+end
+            # second time round (after 2 beats) prints:
+            # 0.1043701171875
+            # 0.764617919921875
+"
       ]
 
 
@@ -2103,6 +2255,32 @@ puts slept #=> Returns false as there were no sleeps in the block"]
   "    ]
 
 
+      def current_random_seed
+        SonicPi::Core::SPRand.get_seed_plus_idx
+      end
+      doc name:          :current_random_seed,
+          introduced:    Version.new(2,10,0),
+          summary:       "Get current random seed",
+          doc:           "Returns the current random seed.
+
+This can be set via the fns `use_random_seed` and `with_random_seed. It is incremented every time you use the random number generator via fns such as `choose` and `rand`.",
+          args:          [],
+          opts:          nil,
+          accepts_block: false,
+          examples:      ["
+  puts current_random_seed # Print out the current random seed",
+"
+## Resetting the seed back to a known place
+puts rand               #=>  0.75006103515625
+puts rand               #=>  0.733917236328125
+a = current_random_seed # Grab the current seed
+puts rand               #=> 0.464202880859375
+puts rand               #=> 0.24249267578125
+use_random_seed a       # Restore the seed
+                        # we'll now get the same random values:
+puts rand               #=> 0.464202880859375
+puts rand               #=> 0.24249267578125
+"]
 
 
       def current_bpm
@@ -2111,7 +2289,9 @@ puts slept #=> Returns false as there were no sleeps in the block"]
       doc name:          :current_bpm,
           introduced:    Version.new(2,0,0),
           summary:       "Get current tempo",
-          doc:           "Returns the current tempo as a bpm value.",
+          doc:           "Returns the current tempo as a bpm value.
+
+This can be set via the fns `use_bpm`, `with_bpm`, `use_sample_bpm` and `with_sample_bpm`.",
           args:          [],
           opts:          nil,
           accepts_block: false,
@@ -2127,7 +2307,9 @@ puts slept #=> Returns false as there were no sleeps in the block"]
       doc name:          :current_beat_duration,
           introduced:    Version.new(2,6,0),
           summary:       "Duration of current beat",
-          doc:           "Get the duration of the current beat in seconds. This is the actual length of time which will elapse with `sleep 1`.",
+          doc:           "Get the duration of the current beat in seconds. This is the actual length of time which will elapse with `sleep 1`.
+
+Affected by calls to `use_bpm`, `with_bpm`, `use_sample_bpm` and `with_sample_bpm`.",
           args:          [],
           opts:          nil,
           accepts_block: false,
@@ -2237,7 +2419,7 @@ puts slept #=> Returns false as there were no sleeps in the block"]
       end
       doc name:           :sleep,
           introduced:     Version.new(2,0,0),
-          summary:        "Wait for duration",
+          summary:        "Wait for beat duration",
           doc:            "Wait for a number of beats before triggering the next command. Beats are converted to seconds by scaling to the current bpm setting.",
           args:           [[:beats, :number]],
           opts:           nil,
@@ -2833,6 +3015,23 @@ assert_equal [:a, :b, :c].size,  3 # ensure lists can be correctly counted
 assert_equal 3, 5, \"something is seriously wrong!\"
 " ]
 
+      def load_buffer(path)
+        path = File.expand_path(path.to_s)
+        raise "Unable to load buffer - no file found with path: #{path}" unless File.exists?(path)
+        buf = __current_job_info[:workspace]
+        __info "loading #{buf} with #{path}"
+        __replace_buffer(buf, File.read(path))
+      end
+
+      def load_example(example_name)
+        path = Dir[examples_path + '/**/' + example_name.to_s + '.rb'].first
+        raise "Error - no example found with name: #{example_name.inspect}" unless path
+        buf = __current_job_info[:workspace]
+        __info "loading #{buf} with #{path}"
+        title = ActiveSupport::Inflector.titleize(example_name)
+        __replace_buffer(buf, "# #{title}\n" + File.read(path))
+
+      end
 
       def __on_thread_death(&block)
         gc_jobs = Thread.current.thread_variable_get(:sonic_pi__not_inherited__spider_in_thread_gc_jobs) || []

@@ -3,7 +3,7 @@
 # Full project source: https://github.com/samaaron/sonic-pi
 # License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 #
-# Copyright 2013, 2014, 2015 by Sam Aaron (http://sam.aaron.name).
+# Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 # All rights reserved.
 #
 # Permission is granted for use, copying, modification, and
@@ -38,13 +38,12 @@ module SonicPi
       @mock_sound.play :c, release: 0.1
 
       # Single hash
-      @mock_sound.expects(:trigger_inst).with(:beep, {note: :c, release: 0.1})
+      @mock_sound.expects(:trigger_inst).with(:beep, {note: 60, release: 0.1})
       @mock_sound.play({note: :c, release: 0.1})
 
-      # Hash and args
-      @mock_sound.expects(:trigger_inst).with(:beep, {note: :c, amp: 1, release: 0.1})
-      @mock_sound.play({note: :c, amp: 1}, {release: 0.1})
+      # nils are culled (but only prior to encoding as an OSC message)
+      @mock_sound.expects(:trigger_inst).with(:beep, {note: 60, cutoff: nil})
+      @mock_sound.play({note: :c, cutoff: nil})
     end
-
   end
 end

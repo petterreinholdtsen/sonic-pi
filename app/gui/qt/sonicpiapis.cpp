@@ -3,13 +3,14 @@
 // Full project source: https://github.com/samaaron/sonic-pi
 // License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 //
-// Copyright 2013, 2014 by Sam Aaron (http://sam.aaron.name).
+// Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 // All rights reserved.
 //
-// Permission is granted for use, copying, modification, distribution,
-// and distribution of modified versions of this work as long as this
+// Permission is granted for use, copying, modification, and
+// distribution of modified versions of this work as long as this
 // notice is included.
 //++
+
 
 #include <QDir>
 #include <iostream>
@@ -29,9 +30,13 @@ SonicPiAPIs::SonicPiAPIs(QsciLexer *lexer)
 
   keywords[MCBlock] << ":air" << ":stone" << ":grass" << ":dirt" << ":cobblestone" << ":wood_plank" << ":sapling" << ":bedrock" << ":water_flowing" << ":water" << ":water_stationary" << ":lava_flowing" << ":lava" << ":lava_stationary" << ":sand" << ":gravel" << ":gold_ore" << ":iron_ore" << ":coal_ore" << ":wood" << ":leaves" << ":glass" << ":lapis" << ":lapis_lazuli_block" << ":sandstone" << ":bed" << ":cobweb" << ":grass_tall" << ":flower_yellow" << ":flower_cyan" << ":mushroom_brown" << ":mushroom_red" << ":gold_block" << ":gold" << ":iron_block" << ":iron" << ":stone_slab_double" << ":stone_slab" << ":brick" << ":brick_block" << ":tnt" << ":bookshelf" << ":moss_stone" << ":obsidian" << ":torch" << ":fire" << ":stairs_wood" << ":chest" << ":diamond_ore" << ":diamond_block" << ":diamond" << ":crafting_table" << ":farmland" << ":furnace_inactive" << ":furnace_active" << ":door_wood" << ":ladder" << ":stairs_cobblestone" << ":door_iron" << ":redstone_ore" << ":snow" << ":ice" << ":snow_block" << ":cactus" << ":clay" << ":sugar_cane" << ":fence" << ":glowstone_block" << ":bedrock_invisible" << ":stone_brick" << ":glass_pane" << ":melon" << ":fence_gate" << ":glowing_obsidian" << ":nether_reactor_core";
 
-  keywords[PlayParam] << "amp:" << "attack:" << "release:" << "sustain:" << "decay:" << "env_curv:" << "sustain_level:" << "pan:" << "attack_level:";
+  keywords[PlayParam] << "amp:" << "attack:" << "release:" << "sustain:" << "decay:" << "env_curve:" << "sustain_level:" << "pan:" << "attack_level:" << "decay_level:" << "on:" << "slide:" << "pitch:";
 
-  keywords[SampleParam] << "amp:" << "pan:" << "attack:" << "decay:" << "sustain:" << "release:" << "attack_level:" << "decay_level:" << "sustain_level:" << "env_curve:" << "rate:" << "beat_stretch:" << "start:" << "finish:" << "res:" << "cutoff:" << "cutoff_attack:" << "cutoff_decay:" << "cutoff_sustain:" << "cutoff_release:" << "cutoff_attack_level:" << "cutoff_decay_level:" << "cutoff_sustain_level:" << "cutoff_env_curve:" << "norm:" << "rpitch:" << "pitch:" << "pitch_stretch:" << "window_size:" << "pitch_dis:" << "time_dis:";
+  keywords[SampleParam] << "amp:" << "pan:" << "attack:" << "decay:" << "sustain:" << "release:" << "attack_level:" << "decay_level:" << "sustain_level:" << "env_curve:" << "rate:" << "beat_stretch:" << "start:" << "finish:" << "res:" << "lpf:" << "lpf_attack:" << "lpf_decay:" << "lpf_sustain:" << "lpf_release:" << "lpf_attack_level:" << "lpf_decay_level:" << "lpf_sustain_level:" << "lpf_env_curve:" << "hpf:" << "hpf_attack:" << "hpf_decay:" << "hpf_sustain:" << "hpf_release:" << "hpf_attack_level:" << "hpf_decay_level:" << "hpf_sustain_level:" << "hpf_env_curve:" << "norm:" << "rpitch:" << "pitch:" << "pitch_stretch:" << "window_size:" << "pitch_dis:" << "time_dis:" << "compress:" << "threshold:" << "clamp_time:" << "slope_above:" << "slope_below:" << "relax_time:" << "pre_amp:";
+
+  keywords[Examples] << ":haunted" << ":ambient_experiment" << ":chord_inversions" << "filtered_dnb" << ":fm_noise" << ":jungle" << ":ocean" << ":reich_phase" << ":acid" << ":ambient" << ":compus_beats" << ":echo_drama" << ":idm_breakbeat" << ":tron_bike" << ":wob_rhyth" << ":bach" << ":driving_pulse" << ":monday_blues" << ":rerezzed" << ":square_skit" << ":blimp_zones" << ":blip_rhythm" << ":shufflit" << ":tilburg_2" << ":time_machine" << ":sonic_dreams";
+
+  keywords[Tuning] << ":just" << ":pythagorean" << ":meantone" << ":equal";
 }
 
 
@@ -39,7 +44,7 @@ SonicPiAPIs::SonicPiAPIs(QsciLexer *lexer)
 void SonicPiAPIs::loadSamples(QString sample_path) {
   QDir dir(sample_path);
   QStringList filetypes;
-  filetypes << "*.wav";
+  filetypes << "*.wav" << "*.wave" << "*.aif" << "*.aiff" << "*.flac";
   dir.setNameFilters(filetypes);
 
   QFileInfoList files = dir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
@@ -95,12 +100,14 @@ void SonicPiAPIs::updateAutoCompletionList(const QStringList &context,
        << ", partial = " << partial.toStdString() << endl;
   */
 
-  if (last == "sample" || last == "sample_info" || last == "sample_duration" || last == "use_sample_bpm" || last == "sample_buffer" || last == "sample_loaded?") {
+  if (last == "sample" || last == "sample_info" || last == "sample_duration" || last == "use_sample_bpm" || last == "sample_buffer" || last == "sample_loaded?" || last == "load_sample" || last == "load_samples") {
     ctx = Sample;
   } else if (last == "with_fx" || last == "use_fx") {
     ctx = FX;
   } else if (last == "with_synth" || last == "use_synth" || last == "synth") {
     ctx = Synth;
+  } else if (last == "load_example") {
+    ctx = Examples;
 
   // autocomplete the second arg of scale/chord
   } else if (lastButOne == "scale") {
@@ -111,6 +118,8 @@ void SonicPiAPIs::updateAutoCompletionList(const QStringList &context,
              last == "mc_block_id" ||
              last == "mc_set_area") {
     ctx = MCBlock;
+  } else if (last == "use_tuning" || last == "with_tuning") {
+    ctx = Tuning;
 
   // FX params
   } else if (words.length() >= 2 &&
@@ -136,6 +145,9 @@ void SonicPiAPIs::updateAutoCompletionList(const QStringList &context,
 
   // Sample params
   } else if (words.length() >= 2 && first == "sample") {
+    if (last.endsWith(':')) return; // don't try to complete parameters
+    ctx = SampleParam;
+  } else if (first == "use_sample_defaults" || first == "with_sample_defaults") {
     if (last.endsWith(':')) return; // don't try to complete parameters
     ctx = SampleParam;
 

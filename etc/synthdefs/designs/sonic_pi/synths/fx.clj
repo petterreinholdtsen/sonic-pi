@@ -18,6 +18,160 @@
 
 (without-namespace-in-synthdef
 
+ (defsynth sonic-pi-fx_mono
+   [amp 1
+    amp_slide 0
+    amp_slide_shape 1
+    amp_slide_curve 0
+    mix 1
+    mix_slide 0
+    mix_slide_shape 1
+    mix_slide_curve 0
+    pan 0
+    pan_slide 0
+    pan_slide_shape 1
+    pan_slide_curve 0
+    in_bus 0
+    out_bus 0]
+   (let [amp           (varlag amp amp_slide amp_slide_curve amp_slide_shape)
+         mix           (varlag mix mix_slide mix_slide_curve mix_slide_shape)
+         pan           (varlag pan pan_slide pan_slide_curve pan_slide_shape)
+
+         [in-l in-r]   (in in_bus 2)
+         mono          (sum [in-l in-r])
+         [new-l new-r] (pan2 mono pan amp)
+
+         fin-l         (x-fade2 in-l new-l (- (* mix 2) 1) amp)
+         fin-r         (x-fade2 in-r new-r (- (* mix 2) 1) amp)]
+     (out out_bus [fin-l fin-r])))
+
+ (defsynth sonic-pi-fx_vowel
+    [amp 1
+     amp_slide 0
+     amp_slide_shape 1
+     amp_slide_curve 0
+     mix 1
+     mix_slide 0
+     mix_slide_shape 1
+     mix_slide_curve 0
+     voice 0
+     vowel_sound 1
+     pre_amp 1
+     pre_amp_slide 0
+     pre_amp_slide_shape 1
+     pre_amp_slide_curve 0
+     in_bus 0
+     out_bus 0]
+    (let [amp                 (varlag amp amp_slide amp_slide_curve amp_slide_shape)
+          pre_amp             (varlag pre_amp pre_amp_slide pre_amp_slide_curve pre_amp_slide_shape)
+          mix                 (varlag mix mix_slide mix_slide_curve mix_slide_shape)
+          freqs               [800, 1150, 2900, 3900, 4950
+                               350, 2000, 2800, 3600, 4950
+                               270, 2140, 2950, 3900, 4950
+                               450, 800, 2830, 3800, 4950
+                               325, 700, 2700, 3800, 4950
+                               800, 1150, 2800, 3500, 4950
+                               400, 1600, 2700, 3300, 4950
+                               350, 1700, 2700, 3700, 4950
+                               450, 800, 2830, 3500, 4950
+                               325, 700, 2530, 3500, 4950
+                               660, 1120, 2750, 3000, 3350
+                               440, 1800, 2700, 3000, 3300
+                               270, 1850, 2900, 3350, 3590
+                               430, 820, 2700, 3000, 3300
+                               370, 630, 2750, 3000, 3400
+                               650, 1080, 2650, 2900, 3250
+                               400, 1700, 2600, 3200, 3580
+                               290, 1870, 2800, 3250, 3540
+                               400, 800, 2600, 2800, 3000
+                               350, 600, 2700, 2900, 3300
+                               600, 1040, 2250, 2450, 2750
+                               400, 1620, 2400, 2800, 3100
+                               250, 1750, 2600, 3050, 3340
+                               400, 750, 2400, 2600, 2900
+                               350, 600, 2400, 2675, 2950]
+          amps                [1.0 0.5011872336272722 0.025118864315095784 0.09999999999999998 0.0031622776601683764
+                               1.0 0.09999999999999998 0.17782794100389226 0.009999999999999995 0.0015848931924611136
+                               1.0 0.251188643150958 0.050118723362727206 0.050118723362727206 0.006309573444801925
+                               1.0 0.2818382931264453 0.0794328234724281 0.0794328234724281 0.0031622776601683764
+                               1.0 0.1584893192461113 0.017782794100389226 0.009999999999999995 9.999999999999994E-4
+                               1.0 0.6309573444801931 0.09999999999999998 0.015848931924611127 9.999999999999994E-4
+                               1.0 0.06309573444801932 0.031622776601683784 0.017782794100389226 9.999999999999994E-4
+                               1.0 0.09999999999999998 0.031622776601683784 0.015848931924611127 9.999999999999994E-4
+                               1.0 0.3548133892335754 0.1584893192461113 0.03981071705534973 0.001778279410038922
+                               1.0 0.251188643150958 0.031622776601683784 0.009999999999999995 6.309573444801923E-4
+                               1.0 0.5011872336272722 0.07079457843841379 0.06309573444801932 0.012589254117941666
+                               1.0 0.19952623149688797 0.12589254117941667 0.09999999999999998 0.09999999999999998
+                               1.0 0.06309573444801932 0.06309573444801932 0.015848931924611127 0.015848931924611127
+                               1.0 0.3162277660168379 0.050118723362727206 0.0794328234724281 0.019952623149688792
+                               1.0 0.09999999999999998 0.07079457843841379 0.031622776601683784 0.019952623149688792
+                               1.0 0.5011872336272722 0.44668359215096315 0.3981071705534972 0.0794328234724281
+                               1.0 0.19952623149688797 0.251188643150958 0.19952623149688797 0.09999999999999998
+                               1.0 0.17782794100389226 0.12589254117941667 0.09999999999999998 0.031622776601683784
+                               1.0 0.3162277660168379 0.251188643150958 0.251188643150958 0.050118723362727206
+                               1.0 0.09999999999999998 0.14125375446227542 0.19952623149688797 0.050118723362727206
+                               1.0 0.44668359215096315 0.3548133892335754 0.3548133892335754 0.09999999999999998
+                               1.0 0.251188643150958 0.3548133892335754 0.251188643150958 0.12589254117941667
+                               1.0 0.031622776601683784 0.1584893192461113 0.0794328234724281 0.03981071705534973
+                               1.0 0.2818382931264453 0.08912509381337454 0.09999999999999998 0.009999999999999995
+                               1.0 0.09999999999999998 0.025118864315095784 0.03981071705534973 0.015848931924611127]
+          bws                 [1/80 1/90 1/120 1/130 1/140
+                               1/60 1/100 1/120 1/150 1/200
+                               1/60 1/90 1/100 1/120 1/120
+                               1/70 1/80 1/100 1/130 1/135
+                               1/50 1/60 1/170 1/180 1/200
+                               1/80 1/90 1/120 1/130 1/140
+                               1/60 1/80 1/120 1/150 1/200
+                               1/50 1/100 1/120 1/150 1/200
+                               1/70 1/80 1/100 1/130 1/135
+                               1/50 1/60 1/170 1/180 1/200
+                               1/80 1/90 1/120 1/130 1/140
+                               1/70 1/80 1/100 1/120 1/120
+                               1/40 1/90 1/100 1/120 1/120
+                               1/40 1/80 1/100 1/120 1/120
+                               1/40 1/60 1/100 1/120 1/120
+                               1/80 1/90 1/120 1/130 1/140
+                               1/70 1/80 1/100 1/120 1/120
+                               1/40 1/90 1/100 1/120 1/120
+                               1/40 1/80 1/100 1/120 1/120
+                               1/40 1/60 1/100 1/120 1/120
+                               1/60 1/70 1/110 1/120 1/130
+                               1/40 1/80 1/100 1/120 1/120
+                               1/60 1/90 1/100 1/120 1/120
+                               1/40 1/80 1/100 1/120 1/120
+                               1/40 1/80 1/100 1/120 1/120]
+          ;; voice is 0 indexed, vowel_sound is 1 indexed
+          vowel_freq_one     (select:kr (+ (* 5 voice) (- (* 5 vowel_sound) 5)) freqs)
+          vowel_freq_two     (select:kr (+ (* 5 voice) (- (* 5 vowel_sound) 4)) freqs)
+          vowel_freq_three   (select:kr (+ (* 5 voice) (- (* 5 vowel_sound) 3)) freqs)
+          vowel_freq_four    (select:kr (+ (* 5 voice) (- (* 5 vowel_sound) 2)) freqs)
+          vowel_freq_five    (select:kr (+ (* 5 voice) (- (* 5 vowel_sound) 1)) freqs)
+          vowel_amp_one      (select:kr (+ (* 5 voice) (- (* 5 vowel_sound) 5)) amps)
+          vowel_amp_two      (select:kr (+ (* 5 voice) (- (* 5 vowel_sound) 4)) amps)
+          vowel_amp_three    (select:kr (+ (* 5 voice) (- (* 5 vowel_sound) 3)) amps)
+          vowel_amp_four     (select:kr (+ (* 5 voice) (- (* 5 vowel_sound) 2)) amps)
+          vowel_amp_five     (select:kr (+ (* 5 voice) (- (* 5 vowel_sound) 1)) amps)
+          vowel_bw_one       (select:kr (+ (* 5 voice) (- (* 5 vowel_sound) 5)) bws)
+          vowel_bw_two       (select:kr (+ (* 5 voice) (- (* 5 vowel_sound) 4)) bws)
+          vowel_bw_three     (select:kr (+ (* 5 voice) (- (* 5 vowel_sound) 3)) bws)
+          vowel_bw_four      (select:kr (+ (* 5 voice) (- (* 5 vowel_sound) 2)) bws)
+          vowel_bw_five      (select:kr (+ (* 5 voice) (- (* 5 vowel_sound) 1)) bws)
+          amp-fudge          5
+          [in-l in-r]        (* (* amp-fudge pre_amp) (in in_bus 2))
+          new-l              (+ (b-band-pass in-l vowel_freq_one (* vowel_bw_one vowel_amp_one))
+                                (b-band-pass in-l vowel_freq_two (* vowel_bw_two vowel_amp_two))
+                                (b-band-pass in-l vowel_freq_three (* vowel_bw_three vowel_amp_three))
+                                (b-band-pass in-l vowel_freq_four (* vowel_bw_four vowel_amp_four))
+                                (b-band-pass in-l vowel_freq_five (* vowel_bw_five vowel_amp_five)))
+          new-r              (+ (b-band-pass in-r vowel_freq_one (* vowel_bw_one vowel_amp_one))
+                                (b-band-pass in-r vowel_freq_two (* vowel_bw_two vowel_amp_two))
+                                (b-band-pass in-r vowel_freq_three (* vowel_bw_three vowel_amp_three))
+                                (b-band-pass in-r vowel_freq_four (* vowel_bw_four vowel_amp_four))
+                                (b-band-pass in-r vowel_freq_five (* vowel_bw_five vowel_amp_five)))
+          fin-l              (x-fade2 in-l new-l (- (* mix 2) 1) (* amp-fudge amp))
+          fin-r              (x-fade2 in-r new-r (- (* mix 2) 1) (* amp-fudge amp))]
+      (out out_bus [fin-l fin-r])))
+
  (defsynth sonic-pi-fx_krush
    [amp 1
     amp_slide 0
@@ -54,11 +208,16 @@
          res         (varlag res res_slide res_slide_curve res_slide_shape)
          cutoff-freq (midicps cutoff)
 
-         [in-l in-r] (abs (* pre_amp (in in_bus 2)))
-         new-l-sqr   (squared in-l)
-         new-l       (/ (+ new-l-sqr (* gain in-l)) (+ new-l-sqr (* in-l (- gain 1)) 1))
-         new-r-sqr   (squared in-r)
-         new-r       (/ (+ new-r-sqr (* gain in-r)) (+ new-r-sqr (* in-r (- gain 1)) 1))
+         [in-l in-r] (* pre_amp (in in_bus 2))
+
+         new-l-abs   (abs in-l)
+         new-l-sqr   (squared new-l-abs)
+         new-l       (/ (+ new-l-sqr (* gain new-l-abs)) (+ new-l-sqr (* new-l-abs (- gain 1)) 1))
+
+         new-r-abs   (abs in-r)
+         new-r-sqr   (squared new-r-abs)
+         new-r       (/ (+ new-r-sqr (* gain new-r-abs)) (+ new-r-sqr (* new-r-abs (- gain 1)) 1))
+
          new-l       (rlpf new-l cutoff-freq res)
          new-r       (rlpf new-r cutoff-freq res)
          fin-l       (x-fade2 in-l new-l (- (* mix 2) 1) amp)
@@ -68,6 +227,53 @@
 
 
 
+  (defsynth sonic-pi-fx_whammy
+    [amp 1
+     amp_slide 0
+     amp_slide_shape 1
+     amp_slide_curve 0
+     mix 1
+     mix_slide 0
+     mix_slide_shape 1
+     mix_slide_curve 0
+     transpose 12
+     transpose_slide 0
+     transpose_slide_shape 1
+     transpose_slide_curve 0
+     deltime 0.05
+     max_delay_time 1
+     grainsize 0.075
+     pre_amp 1
+     pre_amp_slide 0
+     pre_amp_slide_shape 1
+     pre_amp_slide_curve 0
+     in_bus 0
+     out_bus 0]
+    (let [amp             (varlag amp amp_slide amp_slide_curve amp_slide_shape)
+          mix             (varlag mix mix_slide mix_slide_curve mix_slide_shape)
+          pre_amp         (varlag pre_amp pre_amp_slide pre_amp_slide_curve pre_amp_slide_shape)
+          transpose       (varlag (midiratio transpose) transpose_slide transpose_slide_curve transpose_slide_shape)
+          grainfreq       (/ transpose grainsize)
+          [in-l in-r]     (in in_bus 2)
+          new-l           (leak-dc (* (delay-c :in (* pre_amp in-l)
+                                               :max-delay-time max_delay_time
+                                               :delay-time (+ (* (lf-saw grainfreq 1.0)
+                                                                 (/ grainsize -2))
+                                                               deltime))
+                                      (lin-lin (sin-osc grainfreq
+                                                        (/ (* -1 Math/PI) 2))
+                                               -1 1 0 1 )))
+          new-r           (leak-dc (* (delay-c :in (* pre_amp in-r)
+                                               :max-delay-time max_delay_time
+                                               :delay-time (+ (* (lf-saw grainfreq 0.0)
+                                                                 (/ grainsize -2))
+                                                               deltime))
+                                      (lin-lin (sin-osc grainfreq
+                                                        (/ Math/PI 2))
+                                             -1 1 0 1 )))
+          fin-l           (x-fade2 in-l new-l (- (* mix 2) 1) amp)
+          fin-r           (x-fade2 in-r new-r (- (* mix 2) 1) amp)]
+          (out out_bus [fin-l fin-r])))
 
  (defsynth sonic-pi-fx_tanh
    [amp 1
@@ -78,7 +284,7 @@
     mix_slide 0
     mix_slide_shape 1
     mix_slide_curve 0
-    krunch 1
+    krunch 5
     krunch_slide 0
     krunch_slide_shape 1
     krunch_slide_curve 0
@@ -93,8 +299,10 @@
          pre_amp       (varlag pre_amp pre_amp_slide pre_amp_slide_curve pre_amp_slide_shape)
          krunch        (varlag krunch krunch_slide krunch_slide_curve krunch_slide_shape)
          krunch        (select:kr (= 0 krunch) [krunch 0.0001])
+         krunch        (* 5 krunch)
          [in-l in-r]   (* pre_amp (in in_bus 2))
          [new-l new-r] (* (/ (tanh (* krunch [in-l in-r])) krunch) (+ 1 (/ krunch 8)))
+
 
          fin-l         (x-fade2 in-l new-l (- (* mix 2) 1) amp)
          fin-r         (x-fade2 in-r new-r (- (* mix 2) 1) amp)]
@@ -200,6 +408,69 @@
 
 
        (out out_bus [fin-l fin-r])))
+
+
+ (defsynth sonic-pi-fx_gverb
+   [amp 1
+    amp_slide 0
+    amp_slide_shape 1
+    amp_slide_curve 0
+    mix 0.4
+    mix_slide 0
+    mix_slide_shape 1
+    mix_slide_curve 0
+    pre_amp 1
+    pre_amp_slide 0
+    pre_amp_slide_shape 1
+    pre_amp_slide_curve 0
+    spread 0.5
+    spread_slide 0
+    spread_slide_shape 1
+    spread_slide_curve 0
+    damp 0.5
+    damp_slide 0
+    damp_slide_shape 1
+    damp_slide_curve 0
+    pre_damp 0.5
+    pre_damp_slide 0
+    pre_damp_slide_shape 1
+    pre_damp_slide_curve 0
+    dry 1
+    dry_slide 0
+    dry_slide_shape 1
+    dry_slide_curve 0
+
+    room [10 :ir]
+    max_room [-1 :ir]
+    release [3 :ir]
+    ref_level [0.7 :ir]
+    tail_level [0.5 :ir]
+
+    in_bus 0
+    out_bus 0]
+   (let [amp         (varlag amp amp_slide amp_slide_curve amp_slide_shape)
+         mix         (varlag mix mix_slide mix_slide_curve mix_slide_shape)
+         pre_amp     (varlag pre_amp pre_amp_slide pre_amp_slide_curve pre_amp_slide_shape)
+         spread      (varlag spread spread_slide spread_slide_curve spread_slide_shape)
+         dry         (varlag dry dry_slide dry_slide_curve dry_slide_shape)
+         damp        (varlag damp damp_slide damp_slide_curve damp_slide_shape)
+         pre_damp    (varlag pre_damp pre_damp_slide pre_damp_slide_curve pre_damp_slide_shape)
+         max_room    (select:kr (= -1 max_room) [max_room (+ room 1)])
+         [in-l in-r] (* pre_amp (in:ar in_bus 2))
+         [l-l l-r]   (* amp (g-verb in-l room release damp pre_damp 0 dry ref_level  tail_level max_room))
+         [r-l r-r]   (* amp (g-verb in-r room release damp pre_damp 0 dry ref_level tail_level max_room))
+         spr-lin     (lin-lin spread 0 1 -1 0)
+         new-l       (x-fade2 l-l r-l spr-lin)
+         new-r       (x-fade2 r-r l-r spr-lin)
+
+         fin-l       (x-fade2 in-l new-l (- (* mix 2) 1) amp)
+         fin-r       (x-fade2 in-r new-r (- (* mix 2) 1) amp)]
+
+
+
+
+     (out out_bus [fin-l fin-r])))
+
 
 
  (defsynth sonic-pi-fx_reverb
@@ -701,25 +972,26 @@
     relax_time_slide_curve 0
     in_bus 0
     out_bus 0]
-   (let [amp           (varlag amp amp_slide amp_slide_curve amp_slide_shape)
-         mix           (varlag mix mix_slide mix_slide_curve mix_slide_shape)
-         pre_amp       (varlag pre_amp pre_amp_slide pre_amp_slide_curve pre_amp_slide_shape)
-         threshold     (varlag threshold threshold_slide threshold_slide_curve threshold_slide_shape)
-         clamp_time    (varlag clamp_time clamp_time_slide clamp_time_slide_curve clamp_time_slide_shape)
-         slope_above   (varlag slope_above slope_above_slide slope_above_slide_curve slope_above_slide_shape)
-         slope_below   (varlag slope_below slope_below_slide slope_below_slide_curve slope_below_slide_shape)
-         relax_time    (varlag relax_time relax_time_slide relax_time_slide_curve relax_time_slide_shape)
+   (let [amp                       (varlag amp amp_slide amp_slide_curve amp_slide_shape)
+         mix                       (varlag mix mix_slide mix_slide_curve mix_slide_shape)
+         pre_amp                   (varlag pre_amp pre_amp_slide pre_amp_slide_curve pre_amp_slide_shape)
+         threshold                 (varlag threshold threshold_slide threshold_slide_curve threshold_slide_shape)
+         clamp_time                (varlag clamp_time clamp_time_slide clamp_time_slide_curve clamp_time_slide_shape)
+         slope_above               (varlag slope_above slope_above_slide slope_above_slide_curve slope_above_slide_shape)
+         slope_below               (varlag slope_below slope_below_slide slope_below_slide_curve slope_below_slide_shape)
+         relax_time                (varlag relax_time relax_time_slide relax_time_slide_curve relax_time_slide_shape)
 
-         src           (* pre_amp (in in_bus 2))
-         [in-l in-r]   src
+         src                       (in in_bus 2)
+         [orig-in-l orig-in-r]     src
+         pre-amped-src             (* pre_amp src)
+         [pre-amped-l pre-amped-r] pre-amped-src
+         control-sig               (/ (+ pre-amped-l pre-amped-r) 2)
 
-         control-sig   (/ (+ in-l in-r) 2)
-
-         [new-l new-r] (compander src control-sig threshold
-                                  slope_below slope_above
-                                  clamp_time relax_time)
-         fin-l         (x-fade2 in-l new-l (- (* mix 2) 1) amp)
-         fin-r         (x-fade2 in-r new-r (- (* mix 2) 1) amp)]
+         [new-l new-r]             (compander pre-amped-src control-sig threshold
+                                              slope_below slope_above
+                                              clamp_time relax_time)
+         fin-l                     (x-fade2 orig-in-l new-l (- (* mix 2) 1) amp)
+         fin-r                     (x-fade2 orig-in-r new-r (- (* mix 2) 1) amp)]
      (out out_bus [fin-l fin-r])))
 
  (defsynth sonic-pi-fx_band_eq
@@ -1271,33 +1543,33 @@
      amp_slide 0
      amp_slide_shape 1
      amp_slide_curve 0
-     oct1_amp 1
-     oct1_amp_slide 0
-     oct1_amp_slide_shape 1
-     oct1_amp_slide_curve 0
-     oct2_amp 1
-     oct2_amp_slide 0
-     oct2_amp_slide_shape 1
-     oct2_amp_slide_curve 0
-     oct3_amp 1
-     oct3_amp_slide 0
-     oct3_amp_slide_shape 1
-     oct3_amp_slide_curve 0
+     super_amp 1
+     super_amp_slide 0
+     super_amp_slide_shape 1
+     super_amp_slide_curve 0
+     sub_amp 1
+     sub_amp_slide 0
+     sub_amp_slide_shape 1
+     sub_amp_slide_curve 0
+     subsub_amp 1
+     subsub_amp_slide 0
+     subsub_amp_slide_shape 1
+     subsub_amp_slide_curve 0
      in_bus 0
      out_bus 0]
     (let [amp           (varlag amp amp_slide amp_slide_curve amp_slide_shape)
-          oct1_amp      (varlag oct1_amp oct1_amp_slide oct1_amp_slide_curve oct1_amp_slide_shape)
-          oct2_amp      (varlag oct2_amp oct2_amp_slide oct2_amp_slide_curve oct2_amp_slide_shape)
-          oct3_amp      (varlag oct3_amp oct3_amp_slide oct3_amp_slide_curve oct3_amp_slide_shape)
+          super_amp     (varlag super_amp super_amp_slide super_amp_slide_curve super_amp_slide_shape)
+          sub_amp       (varlag sub_amp sub_amp_slide sub_amp_slide_curve sub_amp_slide_shape)
+          subsub_amp    (varlag subsub_amp subsub_amp_slide subsub_amp_slide_curve subsub_amp_slide_shape)
           mix           (varlag mix mix_slide mix_slide_curve mix_slide_shape)
           pre_amp       (varlag pre_amp pre_amp_slide pre_amp_slide_curve pre_amp_slide_shape)
           direct-lpf    (lpf (* pre_amp (in in_bus 2)) 440)
-          super-oct     (abs direct-lpf)
+          super-oct     (* 2 (leak-dc (abs direct-lpf))) ;; Compensate for resulting wave being half amplitude
           sub-oct       (toggle-ff:ar direct-lpf)
           sub-sub-oct   (toggle-ff:ar sub-oct)
 
           [in-l in-r]   (* pre_amp (in in_bus 2))
-          [new-l new-r] (+ (* super-oct oct1_amp) (* direct-lpf sub-oct oct2_amp) (* direct-lpf sub-sub-oct oct3_amp))
+          [new-l new-r] (+ (* super-oct super_amp) (* direct-lpf sub-oct sub_amp) (* direct-lpf sub-sub-oct subsub_amp))
           fin-l         (x-fade2 in-l new-l (- (* mix 2) 1) amp)
           fin-r         (x-fade2 in-r new-r (- (* mix 2) 1) amp)]
       (out out_bus [fin-l fin-r])))
@@ -1450,19 +1722,15 @@
      (out out_bus [fin-l fin-r])))
 
 
- ;;(def ab (audio-bus 2))
- ;;(def g (group :after (foundation-default-group)))
- ;;(sonic-pi-fx_rbpf [:head g] :in_bus ab)
 
- ;;(run (out ab (pan2 (saw))))
-
- ;;(kill sonic-pi-fx_rbpf)
 )
 
 (comment
+  (core/save-synthdef sonic-pi-fx_mono)
   (core/save-synthdef sonic-pi-fx_krush)
   (core/save-synthdef sonic-pi-fx_bitcrusher)
   (core/save-synthdef sonic-pi-fx_reverb)
+  (core/save-synthdef sonic-pi-fx_gverb)
   (core/save-synthdef sonic-pi-fx_level)
   (core/save-synthdef sonic-pi-fx_echo)
   (core/save-synthdef sonic-pi-fx_slicer)
@@ -1486,8 +1754,9 @@
   (core/save-synthdef sonic-pi-fx_rbpf)
   (core/save-synthdef sonic-pi-fx_nrbpf)
   (core/save-synthdef sonic-pi-fx_tanh)
+  (core/save-synthdef sonic-pi-fx_whammy)
   (core/save-synthdef sonic-pi-fx_pitch_shift)
   (core/save-synthdef sonic-pi-fx_ring_mod)
   (core/save-synthdef sonic-pi-fx_octaver)
   (core/save-synthdef sonic-pi-fx_flanger)
-  )
+  (core/save-synthdef sonic-pi-fx_vowel))

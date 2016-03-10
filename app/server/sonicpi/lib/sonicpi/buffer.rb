@@ -3,7 +3,7 @@
 # Full project source: https://github.com/samaaron/sonic-pi
 # License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 #
-# Copyright 2013, 2014, 2015 by Sam Aaron (http://sam.aaron.name).
+# Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 # All rights reserved.
 #
 # Permission is granted for use, copying, modification, and
@@ -42,9 +42,9 @@ module SonicPi
 
     def to_s
       if @path
-        "#<Buffer @id=#{@id}, @num_chans=#{@num_chans}, @num_frames=#{num_frames}, @sample_rate=#{@sample_rate}, @duration=#{@duration}, @path=#{@path}>"
+        "#<Buffer @id=#{@id}, @num_chans=#{@num_chans}, @num_frames=#{@num_frames}, @sample_rate=#{@sample_rate}, @duration=#{@duration}, @path=#{@path}>"
       else
-        "#<Buffer @id=#{@id}, @num_chans=#{@num_chans}, @num_frames=#{num_frames}, @sample_rate=#{@sample_rate}, @duration=#{@duration}>"
+        "#<Buffer @id=#{@id}, @num_chans=#{@num_chans}, @num_frames=#{@num_frames}, @sample_rate=#{@sample_rate}, @duration=#{@duration}>"
       end
     end
 

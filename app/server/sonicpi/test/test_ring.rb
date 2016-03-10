@@ -3,7 +3,7 @@
 # Full project source: https://github.com/samaaron/sonic-pi
 # License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 #
-# Copyright 2013, 2014, 2015 by Sam Aaron (http://sam.aaron.name).
+# Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 # All rights reserved.
 #
 # Permission is granted for use, copying, modification, and
@@ -25,9 +25,8 @@ module SonicPi
       assert_equal(SonicPi::Core::RingVector, stretch([:e1], 3).class)
       assert_equal([:a2,:a2], stretch(:a2, 2))
 
-      assert_raises SonicPi::Core::EmptyVectorError do
-        stretch([:e2], 0)
-      end
+      assert_equal(stretch([:e2], 0), ring())
+
     end
 
     def test_knit
@@ -35,16 +34,11 @@ module SonicPi
       assert_equal(knit(:e1, 3, :c1, 2), [:e1, :e1, :e1, :c1, :c1])
       assert_equal(knit(:e2, -1, :c1, 3), [:c1, :c1, :c1])
       assert_equal(knit(:e1, 3).class, SonicPi::Core::RingVector)
-      assert_raises SonicPi::Core::EmptyVectorError do
-        knit(:e2, 0)
-      end
-
-      assert_raises SonicPi::Core::EmptyVectorError do
-        knit(:e2, -1)
-      end
+      assert_equal(knit([:e2], 0), ring())
+      assert_equal(knit(:e2, -1), ring())
 
       assert_raises RuntimeError, "even number" do
-        knit(:e2, 1, :c3)
+        assert_equal(knit(:e2, 1, :c3), ring())
       end
 
     end
@@ -59,10 +53,8 @@ module SonicPi
       assert_equal(range(10, 50, step: 10), [10, 20, 30, 40])
       assert_equal(range(1, 5, step: -1), [1, 2, 3, 4])
       assert_equal(range(1, 3).class, SonicPi::Core::RingVector)
+      assert_equal(range(10, 10, step: -1), ring())
 
-      assert_raises SonicPi::Core::EmptyVectorError do
-        range(10, 10, step: -1)
-      end
     end
 
 
@@ -89,14 +81,32 @@ module SonicPi
       assert_equal(bools(:a, 1, nil, true, 0), [true, true, false, true, false])
       assert_equal(bools(1,0, 0).class, SonicPi::Core::RingVector)
 
-      assert_raises SonicPi::Core::EmptyVectorError do
-        assert_equal(bools(), [])
-      end
+
+      assert_equal(bools(), ring())
+
     end
 
     def test_spread
       assert_equal(spread(5, 13), [true, false, false, true, false, false, true, false, true, false, false, true, false])
       assert_equal(spread(3, 8, rotate: 1),  [true, false, false, true, false, true, false, false])
+    end
+
+    def test_plus
+      assert_equal(ring(1, 2, 3) + 10, ring(11.0, 12.0, 13.0))
+    end
+
+    def test_list_plus
+      assert_equal(ring(1, 2, 3) + ring(4), ring(1, 2, 3, 4))
+      assert_equal(ring(1, 2, 3) + ring(1), ring(1, 2, 3, 1))
+    end
+
+    def test_minus
+      assert_equal(ring(10, 20, 30) - 5, ring(5.0, 15.0, 25.0))
+    end
+
+    def test_list_minus
+      assert_equal(ring(1, 2, 3) - ring(1), ring(2, 3))
+      assert_equal(ring(1, 2, 3) - ring(10), ring(1, 2, 3))
     end
   end
 end

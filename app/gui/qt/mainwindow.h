@@ -3,7 +3,7 @@
 // Full project source: https://github.com/samaaron/sonic-pi
 // License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 //
-// Copyright 2013, 2014, 2015 by Sam Aaron (http://sam.aaron.name).
+// Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 // All rights reserved.
 //
 // Permission is granted for use, copying, modification, and
@@ -37,6 +37,7 @@
 #include <sstream>
 #include <fstream>
 #include <QSignalMapper>
+#include "sonicpitheme.h"
 
 class QAction;
 class QMenu;
@@ -50,7 +51,7 @@ class QSlider;
 class SonicPiAPIs;
 class SonicPiLog;
 class SonicPiScintilla;
-class SonicPiServer;
+class SonicPiOSCServer;
 
 struct help_page {
   QString title;
@@ -74,7 +75,7 @@ public:
     MainWindow(QApplication &ref, bool i18n, QSplashScreen* splash);
 #endif
 
-    SonicPiServer *sonicPiServer;
+    SonicPiOSCServer *sonicPiOSCServer;
     enum {UDP=0, TCP=1};
     QCheckBox *dark_mode;
     bool loaded_workspaces;
@@ -117,6 +118,7 @@ private slots:
     void mixerHpfDisable();
     void mixerLpfDisable();
     QString currentTabLabel();
+    bool loadFile();
     bool saveAs();
     void about();
     void help();
@@ -134,7 +136,7 @@ private slots:
     void showPrefsPane();
     void updateDocPane(QListWidgetItem *cur);
     void updateDocPane2(QListWidgetItem *cur, QListWidgetItem *prev);
-    void serverStarted();
+    void showWindow();
     void splashClose();
     void startupError(QString msg);
     void replaceBuffer(QString id, QString content, int line, int index, int first_line);
@@ -166,13 +168,17 @@ private slots:
     void heartbeatOSC();
     void zoomCurrentWorkspaceIn();
     void zoomCurrentWorkspaceOut();
+    void showWelcomeScreen();
+    void setupWindowStructure();
+    void setupTheme();
+    void escapeWorkspaces();
 
 private:
 
     void setupLogPathAndRedirectStdOut();
     QSignalMapper *signalMapper;
-    void startServer();
-    void waitForServiceSync();
+    void startRubyServer();
+    bool waitForServiceSync();
     void clearOutputPanels();
     void createShortcuts();
     void createToolBar();
@@ -249,6 +255,7 @@ private:
     QProcess *serverProcess;
 
     SonicPiLexer *lexer;
+    SonicPiTheme *theme;
 
     QToolBar *toolBar;
 
@@ -288,7 +295,7 @@ private:
     std::ofstream stdlog;
 
     SonicPiAPIs *autocomplete;
-    QString sample_path, log_path;
+    QString sample_path, log_path, sp_user_path, ruby_server_path, ruby_path, server_error_log_path, server_output_log_path;
     QString defaultTextBrowserStyle;
 
     QString version;
@@ -301,7 +308,6 @@ private:
     QLabel *versionLabel;
 
     QString guiID;
-
 };
 
 #endif
